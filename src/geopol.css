@@ -750,3 +750,40 @@ code,
     width: 140px;
   }
 }
+
+/* Region map: continents and their countries */
+.continent-link {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+}
+.continent-link:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.country-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.country-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  background: var(--hover);
+}
+.country-chip:hover {
+  background: var(--active);
+}
+.country-chip.installed {
+  font-weight: 600;
+}
+.region-card > * {
+  flex-shrink: 0;
+}

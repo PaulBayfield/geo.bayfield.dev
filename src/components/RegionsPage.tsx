@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource } from "maplibre-gl";
 import { api, type CatalogRegion, type Region, type ServiceSettings } from "../lib/api";
 import { useApp } from "../lib/app";
-import { countryShapes, regionCovers } from "../lib/countries";
+import { boundsOf, loadCountryShapes, regionCovers, type CountryShapes } from "../lib/countries";
 import { invalidate, useApi } from "../lib/hooks";
 import { useSettings } from "../lib/settings";
 import { ConfirmDialog, Spinner, useToast } from "./common";
@@ -27,6 +27,10 @@ export function RegionsPage() {
   const [removing, setRemoving] = useState<Region | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const map = useRef<MapInstance | null>(null);
+  const [base, setBase] = useState<CountryShapes | null>(null);
+  useEffect(() => {
+    void loadCountryShapes().then(setBase);
+  }, []);
 
   const installed = useMemo(() => new Map((regionsReq.data ?? []).map((r) => [r.id, r])), [regionsReq.data]);
   const busy = useMemo(() => new Set((jobs ?? []).filter((j) => j.status === "running" || j.status === "queued").map((j) => j.region)), [jobs]);
@@ -43,21 +47,38 @@ export function RegionsPage() {
   // Country → the catalog region covering it, and each country's status, for the map.
   const byCountry = useMemo(() => {
     const m = new Map<string, CatalogRegion>();
-    for (const r of catalogReq.data ?? []) for (const name of regionCovers(r)) if (!m.has(name)) m.set(name, r);
+    if (base) for (const r of catalogReq.data ?? []) for (const name of regionCovers(r, base)) if (!m.has(name)) m.set(name, r);
     return m;
-  }, [catalogReq.data]);
+  }, [catalogReq.data, base]);
+
+  /** What the selection covers on the map: one region's countries, or every country of a continent. */
+  const isSelected = (r: CatalogRegion | undefined) => !!r && !!selected && (r.id === selected.id || (selected.isContinent && r.continent === selected.continent));
 
   const shapes = useMemo(() => {
-    const fc = countryShapes();
+    const fc = base ?? { type: "FeatureCollection" as const, features: [] };
     return {
       ...fc,
       features: fc.features.map((feat, i) => {
         const r = byCountry.get(feat.properties.name);
-        return { ...feat, id: i, properties: { ...feat.properties, region: r?.id ?? "", status: r ? status(r.id) : "none", selected: !!r && r.id === selected?.id } };
+        return { ...feat, id: i, properties: { ...feat.properties, region: r?.id ?? "", status: r ? status(r.id) : "none", selected: isSelected(r) } };
       }),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [byCountry, installed, busy, selected]);
+  }, [byCountry, installed, busy, selected, base]);
+
+  // Show what's selected: zoom to its countries (a continent's, or the region's own).
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !selected || !base) return;
+    const picked = base.features.filter((f) => isSelected(byCountry.get(f.properties.name)));
+    let b = boundsOf(picked);
+    // A giant (Russia in Europe) would zoom out to half the world: frame the others when that's much tighter.
+    const width = (x: [number, number, number, number] | null) => (x ? x[2] - x[0] : 0);
+    const trimmed = boundsOf(picked.filter((f) => width(boundsOf([f])) <= 90));
+    if (trimmed && width(trimmed) < width(b) / 2) b = trimmed;
+    if (b) m.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 40, bottom: 40, left: 40, right: 360 }, maxZoom: 6, duration: 700 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, base, byCountry]);
 
   const drawLayers = (m: MapInstance, dark: boolean) => {
     if (m.getSource("countries")) return;
@@ -144,6 +165,9 @@ export function RegionsPage() {
             installed={installed.get(selected.id)}
             busy={busy.has(selected.id)}
             defaults={serviceSettings?.data}
+            countries={selected.isContinent ? (catalogReq.data ?? []).filter((r) => r.continent === selected.continent && !r.isContinent) : []}
+            statusOf={status}
+            onPick={setSelected}
             onInstall={(o) => void install(selected, o)}
             onClose={() => setSelected(null)}
           />
@@ -259,7 +283,15 @@ export function RegionsPage() {
           <div className="catalog">
             {continents.map(([continent, regions]) => (
               <div key={continent} className="catalog-group">
-                <h3>{regions.find((r) => r.isContinent)?.name ?? continent}</h3>
+                <h3>
+                  {regions.find((r) => r.isContinent) ? (
+                    <button className="continent-link" title={t("showContinent")} onClick={() => setSelected(regions.find((r) => r.isContinent)!)}>
+                      {regions.find((r) => r.isContinent)!.name}
+                    </button>
+                  ) : (
+                    continent
+                  )}
+                </h3>
                 <div className="catalog-items">
                   {regions.map((r) => {
                     const s = status(r.id);
@@ -304,6 +336,9 @@ function RegionCard({
   installed,
   busy,
   defaults,
+  countries,
+  statusOf,
+  onPick,
   onInstall,
   onClose,
 }: {
@@ -311,6 +346,10 @@ function RegionCard({
   installed?: Region;
   busy: boolean;
   defaults?: ServiceSettings["data"];
+  /** For a continent: its countries, to pick one. */
+  countries: CatalogRegion[];
+  statusOf: (id: string) => Status;
+  onPick: (r: CatalogRegion) => void;
   onInstall: (o: { languages: string[]; houseNumbers: boolean }) => void;
   onClose: () => void;
 }) {
@@ -352,6 +391,19 @@ function RegionCard({
           )
         )}
       </dl>
+      {countries.length > 0 && (
+        <>
+          <p className="small muted">{t("continentCountries", { n: countries.length })}</p>
+          <div className="country-chips">
+            {countries.map((c) => (
+              <button key={c.id} className={`country-chip ${statusOf(c.id)}`} onClick={() => onPick(c)} title={c.bytes ? f.bytes(c.bytes) : undefined}>
+                {statusOf(c.id) !== "available" && <span className={`region-dot${statusOf(c.id) === "busy" ? " busy" : ""}`} />}
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {admin && (
         <>
           <label className="field">

@@ -1,7 +1,7 @@
 {
   "name": "geopol-server",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "GeoPol: geocoding API (autocomplete, search, reverse) on PostGIS, its admin dashboard and the web build",
   "engines": {

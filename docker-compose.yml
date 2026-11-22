@@ -4,10 +4,13 @@ services:
     build: .
     env_file: server/.env
     environment:
+      # GeoPol's own database: the geopol-db service below (database and user "geopol").
       DATABASE_URL: postgres://geopol:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@geopol-db:5432/geopol
-      DATABASE_POOL_MAX: "10"
+      DATABASE_POOL_MAX: "8"
+      IMPORT_WORKERS: "2"
     ports:
       - "8840:8840"
+    mem_limit: 1536m
     depends_on:
       geopol-db:
         condition: service_healthy
@@ -21,11 +24,14 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - geopol-db:/var/lib/postgresql/data
-    # Sized for a 16 GB server: a big cache for the indexes, room for the imports' index builds.
+    # A 4 GB budget for GeoPol as a whole: 2.5 GB here (1 GB of shared buffers), 1.5 GB for the app.
+    # For 8 GB: mem_limit 5g, shared_buffers=2GB, effective_cache_size=3GB, maintenance_work_mem=1GB
+    # (and the app: mem_limit 3g, IMPORT_WORKERS 4).
     command: >
-      -c shared_buffers=2GB -c effective_cache_size=8GB -c work_mem=32MB -c maintenance_work_mem=1GB
-      -c max_wal_size=8GB -c checkpoint_timeout=15min -c max_connections=40 -c random_page_cost=1.1
-    shm_size: 1g
+      -c shared_buffers=1GB -c effective_cache_size=1536MB -c work_mem=16MB -c maintenance_work_mem=512MB
+      -c max_wal_size=4GB -c checkpoint_timeout=15min -c max_connections=30 -c random_page_cost=1.1
+    mem_limit: 2560m
+    shm_size: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U geopol -d geopol"]
       interval: 5s

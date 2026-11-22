@@ -216,7 +216,7 @@ cp server/.env.example server/.env # PUBLIC_URL, OIDC_*
 docker compose up -d
 ```
 
-The image is published to `ghcr.io/paulbayfield/geo.bayfield.dev` on every push to `main`. The compose file's PostGIS settings are sized for a 16 GB server; plan disk for about five times each region's download with house numbers (France ≈ 8 GB, Germany ≈ 10 GB). Put it behind your reverse proxy at `https://geo.bayfield.dev → localhost:8840`.
+The image is published to `ghcr.io/paulbayfield/geo.bayfield.dev` on every push to `main`. The compose file gives GeoPol a 4 GB memory budget (2.5 GB for PostGIS, 1.5 GB for the app with 2 import threads; the values for 8 GB are in its comments); plan disk for about five times each region's download with house numbers (France ≈ 8 GB, Germany ≈ 10 GB). Put it behind your reverse proxy at `https://geo.bayfield.dev → localhost:8840`.
 
 
 ## 🙌 • Credits

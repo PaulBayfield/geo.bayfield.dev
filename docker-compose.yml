@@ -1,0 +1,37 @@
+services:
+  geopol:
+    image: ghcr.io/paulbayfield/geo.bayfield.dev:latest
+    build: .
+    env_file: server/.env
+    environment:
+      DATABASE_URL: postgres://geopol:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@geopol-db:5432/geopol
+      DATABASE_POOL_MAX: "10"
+    ports:
+      - "8840:8840"
+    depends_on:
+      geopol-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  geopol-db:
+    image: postgis/postgis:17-3.5-alpine
+    environment:
+      POSTGRES_DB: geopol
+      POSTGRES_USER: geopol
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - geopol-db:/var/lib/postgresql/data
+    # Sized for a 16 GB server: a big cache for the indexes, room for the imports' index builds.
+    command: >
+      -c shared_buffers=2GB -c effective_cache_size=8GB -c work_mem=32MB -c maintenance_work_mem=1GB
+      -c max_wal_size=8GB -c checkpoint_timeout=15min -c max_connections=40 -c random_page_cost=1.1
+    shm_size: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geopol -d geopol"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  geopol-db:

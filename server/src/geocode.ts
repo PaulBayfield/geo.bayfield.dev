@@ -1,16 +1,25 @@
-// Geocoding queries: autocomplete (as you type), reverse (a point to an address).
+// Geocoding: autocomplete (as you type), search (full words, filters), reverse (a point to an address).
 //
-// Autocomplete matches the words typed against the features' search vectors, the last word as a
-// prefix ("rue de riv" → rue & de & riv:*). When the query has a house number, it also looks for that
-// number on the streets that match. Too few results: a trigram search catches typos ("bruxels").
+// Text queries match the features' search vectors in two tiers: the important places (cities,
+// districts, landmarks, ~1% of the rows, in their own small index) and the long tail (streets, shops…)
+// capped at a few thousand candidates. A query with a house number also looks for that number on the
+// streets that matched. Too few results: a trigram search catches typos ("bruxels").
+//
+// Benchmarks and the reasoning behind this: docs/spike.md.
 
-import { sql } from "./db.ts";
+import { sql, TOP_IMPORTANCE } from "./db.ts";
+import { settings } from "./settings.ts";
+
+/** A piece of SQL to nest in a query (postgres.js types fragments by their rows, which don't matter here). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Fragment = any;
 
 export interface Hit {
   id: string;
   source: "feature" | "address";
   layer: string;
   name: string | null;
+  names: Record<string, unknown> | null;
   housenumber: string | null;
   street: string | null;
   postcode: string | null;
@@ -18,7 +27,9 @@ export interface Hit {
   city: string | null;
   county: string | null;
   state: string | null;
+  addressI18n: Record<string, Record<string, string>> | null;
   countryCode: string | null;
+  region: string;
   osmType: string;
   osmId: string;
   osmKey: string;
@@ -27,16 +38,23 @@ export interface Hit {
   lon: number;
   lat: number;
   extent: number[] | null;
-  /** Metres from the point given (reverse, or the location bias). */
+  /** Metres from the point given (reverse). */
   distance?: number;
   score?: number;
 }
 
-export interface AutocompleteOptions {
+export interface Filters {
   limit?: number;
   /** Favour results near this point. */
   near?: { lat: number; lon: number };
+  /** Only these layers (house, street, city…). */
+  layers?: string[];
+  /** Only these countries (ISO codes, lowercase). */
   countries?: string[];
+  /** [west, south, east, north]. */
+  bbox?: [number, number, number, number];
+  /** OSM tags: "amenity", "amenity:restaurant", "!highway". */
+  tags?: string[];
 }
 
 /** Lowercase, accents off, split into words (letters and digits only, so they're safe in a tsquery). */
@@ -53,82 +71,139 @@ export function words(q: string): string[] {
 const isHouseNumber = (w: string) => /^\d{1,4}[a-z]?$/.test(w);
 
 const FEATURE_FIELDS = sql`
-  id::text, 'feature' AS source, layer, name, housenumber, street, postcode, district, city, county, state, country_code,
-  osm_type, osm_id::text, osm_key, osm_value, importance, ST_X(centroid) AS lon, ST_Y(centroid) AS lat, extent`;
+  id::text, 'feature' AS source, layer, name, names, housenumber, street, postcode, district, city, county, state, address_i18n,
+  country_code, region, osm_type, osm_id::text, osm_key, osm_value, importance, ST_X(centroid) AS lon, ST_Y(centroid) AS lat, extent`;
 
 const ADDRESS_FIELDS = sql`
-  a.id::text, 'address' AS source, 'house' AS layer, NULL AS name, a.housenumber, a.street, a.postcode, a.district, a.city, a.county, a.state,
-  a.country_code, a.osm_type, a.osm_id::text, a.osm_key, a.osm_value, a.importance, ST_X(a.centroid) AS lon, ST_Y(a.centroid) AS lat, NULL::real[] AS extent`;
+  a.id::text, 'address' AS source, 'house' AS layer, NULL AS name, NULL::jsonb AS names, a.housenumber, a.street, a.postcode, a.district,
+  a.city, a.county, a.state, a.address_i18n, a.country_code, a.region, a.osm_type, a.osm_id::text, a.osm_key, a.osm_value, a.importance,
+  ST_X(a.centroid) AS lon, ST_Y(a.centroid) AS lat, NULL::real[] AS extent`;
 
-/** How much nearness counts, as a bonus that fades over ~50 km. */
-const nearBonus = (near?: { lat: number; lon: number }) =>
-  near ? sql`+ 0.5 * exp(-ST_Distance(centroid::geography, ST_SetSRID(ST_MakePoint(${near.lon}, ${near.lat}), 4326)::geography) / 50000.0)` : sql``;
-
-/** Places at least this important (cities, districts, landmarks: ~1% of features) are searched first, in their own small index. */
-export const TOP_IMPORTANCE = 0.15;
 /** How many matches of the long tail (streets, shops…) are scored at most: common words ("rue") match far more. */
 const TAIL_CANDIDATES = 3000;
 
-/** Same place, said twice (a street cut into segments, a station mapped as a node and an area): one is enough. */
-function dedupe(hits: Hit[]): Hit[] {
-  const seen = new Set<string>();
-  return hits.filter((h) => {
-    const key = [h.layer === "house" && h.source === "feature" ? "poi" : h.layer, (h.name ?? "").toLowerCase(), h.housenumber, h.street, h.city].join("|");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function filterSql(f: Filters) {
+  const layers = f.layers?.length ? f.layers : settings().results.layers;
+  let out = sql`AND layer = ANY(${layers})`;
+  if (f.countries?.length) out = sql`${out} AND country_code = ANY(${f.countries})`;
+  if (f.bbox) out = sql`${out} AND centroid && ST_MakeEnvelope(${f.bbox[0]}, ${f.bbox[1]}, ${f.bbox[2]}, ${f.bbox[3]}, 4326)`;
+  for (const tag of f.tags ?? []) {
+    const not = tag.startsWith("!");
+    const [key, value] = tag.replace(/^!/, "").split(":");
+    const match = value ? sql`(osm_key = ${key} AND osm_value = ${value})` : sql`osm_key = ${key}`;
+    out = not ? sql`${out} AND NOT ${match}` : sql`${out} AND ${match}`;
+  }
+  return out;
 }
 
-export async function autocomplete(q: string, o: AutocompleteOptions = {}): Promise<Hit[]> {
-  const limit = Math.min(o.limit ?? 8, 50);
+function nearBonus(near?: { lat: number; lon: number }) {
+  const r = settings().ranking;
+  if (!near || !r.near) return sql``;
+  return sql`+ ${r.near}::float8 * exp(-ST_Distance(centroid::geography, ST_SetSRID(ST_MakePoint(${near.lon}, ${near.lat}), 4326)::geography) / ${r.nearKm * 1000}::float8)`;
+}
+
+/** Metres between two points (equirectangular: plenty at these distances). */
+const metres = (a: Hit, b: Hit) => {
+  const x = ((b.lon - a.lon) * Math.cos(((a.lat + b.lat) / 2) * (Math.PI / 180))) * 111_320;
+  const y = (b.lat - a.lat) * 110_540;
+  return Math.hypot(x, y);
+};
+
+/**
+ * Same place, said twice: a street cut into segments, a square mapped as a place, an area and a street
+ * ("Grand-Place" ×3), a station as a node and a building. Same name less than 300 m apart: one is enough
+ * (the first, the best ranked).
+ */
+function dedupe(hits: Hit[]): Hit[] {
+  const kept: Hit[] = [];
+  const seen = new Set<string>();
+  for (const h of hits) {
+    const key = [h.layer === "house" && h.source === "feature" ? "poi" : h.layer, (h.name ?? "").toLowerCase(), h.housenumber, h.street, h.city].join("|");
+    if (seen.has(key)) continue;
+    const name = h.name?.toLowerCase();
+    if (name && !h.housenumber && kept.some((k) => k.name?.toLowerCase() === name && metres(k, h) < 300)) continue;
+    seen.add(key);
+    kept.push(h);
+  }
+  return kept;
+}
+
+export const limitOf = (requested?: number) => {
+  const r = settings().results;
+  return Math.max(1, Math.min(requested ?? r.defaultLimit, r.maxLimit));
+};
+
+/**
+ * Text search. `prefix`: the last word may be unfinished (autocomplete). Every word typed must match
+ * somewhere; names count most (see the ranking settings).
+ */
+export async function find(q: string, f: Filters, prefix: boolean): Promise<Hit[]> {
+  const wanted = limitOf(f.limit);
   const all = words(q);
   if (!all.length) return [];
-  const typingLast = !/\s$/.test(q);
-  const numbers = all.filter(isHouseNumber);
-  const text = all.filter((w) => !isHouseNumber(w));
-  if (!text.length) return [];
-  const tsquery = text.map((w, i) => (i === text.length - 1 && typingLast ? `${w}:*` : w)).join(" & ");
+  const typingLast = prefix && !/\s$/.test(q);
+  let numbers = all.filter(isHouseNumber);
+  let text = all.filter((w) => !isHouseNumber(w));
+  // Only numbers: a postcode ("9356", "1000"), not a house number.
+  if (!text.length) {
+    text = numbers;
+    numbers = [];
+  }
+  // With a house number, look at more streets: the number is then searched on them.
+  const limit = numbers.length ? Math.max(wanted, 10) : wanted;
+  const term = (w: string, i: number, weight = "") => (i === text.length - 1 && typingLast ? `${w}:*${weight}` : weight ? `${w}:${weight}` : w);
+  const tsquery = text.map((w, i) => term(w, i)).join(" & ");
+  const inName = text.map((w, i) => term(w, i, "A")).join(" & ");
   const phrase = text.join(" ");
-  const countries = o.countries?.length ? sql`AND country_code = ANY(${o.countries})` : sql``;
-  // Every word in the name itself (weight A) beats words found in the address ("antwerpen centr" → the
-  // station, not a place in the province of Antwerp); a name that starts with what was typed counts most
-  // ("br" → Brussels before "Rue de Bruges"). Punctuation doesn't count ("Grand-Place" starts with "grand place").
-  const inName = text.map((w, i) => (i === text.length - 1 && typingLast ? `${w}:*A` : `${w}:A`)).join(" & ");
-  const plain = sql`regexp_replace(geo_norm(name), '[^[:alnum:]]+', ' ', 'g')`;
-  const score = sql`importance
-    + CASE WHEN search @@ to_tsquery('simple', ${inName}) THEN 0.4 ELSE 0 END
-    + CASE WHEN ${plain} LIKE ${phrase + "%"} THEN 0.6 WHEN ${plain} LIKE ${"% " + phrase + "%"} THEN 0.3 ELSE 0 END
-    ${nearBonus(o.near)}`;
-  // A single letter or two only searches the important places (or around the user): everything else matches.
+  const r = settings().ranking;
+  const filters = filterSql(f);
+  // Scoring in two stages, so the costly part only runs on a few rows:
+  //  1. `base` (importance, every word in the name) + the name-starts-with bonus on the default name;
+  //  2. the best few rows get the bonus again on every name they have, in each kept language, punctuation
+  //     off ("Rue de la Loi - Wetstraat" is also "Rue de la Loi" in French; "Grand-Place" starts with "grand place").
+  const plainOf = (x: Fragment) => sql`regexp_replace(geo_norm(${x}), '[^[:alnum:]]+', ' ', 'g')`;
+  const prefixBonus = (names: Fragment) => sql`
+    CASE WHEN ${names} LIKE ${"%|" + phrase + "|%"} THEN ${r.prefix * 1.5}::float8
+         WHEN ${names} LIKE ${"%|" + phrase + "%"} THEN ${r.prefix}::float8
+         WHEN ${names} LIKE ${"% " + phrase + "%"} THEN ${r.prefix / 2}::float8 ELSE 0 END`;
+  const base = sql`${r.importance}::float8 * importance
+    + CASE WHEN search @@ to_tsquery('simple', ${inName}) THEN ${r.nameMatch}::float8 ELSE 0 END
+    ${nearBonus(f.near)}`;
+  const cheap = sql`${base} + ${prefixBonus(sql`('|' || ${plainOf(sql`name`)} || '|')`)}`;
+  const allNames = sql`('|' || ${plainOf(sql`name`)} || '|' || coalesce((SELECT string_agg(${plainOf(sql`v`)}, '|') FROM jsonb_each_text(names - 'alt') AS e(k, v)), '') || '|')`;
+  const shortlist = limit * 5;
+  // One or two letters only search the important places (or around the user): everything else matches.
   const short = text.length === 1 && text[0].length < 3;
-  const around = o.near ? sql`AND centroid && ST_Expand(ST_SetSRID(ST_MakePoint(${o.near.lon}, ${o.near.lat}), 4326), 0.5)` : sql``;
+  const around = f.near ? sql`AND centroid && ST_Expand(ST_SetSRID(ST_MakePoint(${f.near.lon}, ${f.near.lat}), 4326), 0.5)` : sql``;
+  /** Stage 2 over a shortlist from stage 1. */
+  const rescore = (shortlistSql: Fragment) => sql<Hit[]>`
+    SELECT *, base + ${prefixBonus(allNames)} AS score FROM (${shortlistSql}) s
+    ORDER BY score DESC LIMIT ${limit * 3}`;
 
   const [top, tail] = await Promise.all([
-    sql<Hit[]>`
-      SELECT ${FEATURE_FIELDS}, ${score} AS score
+    rescore(sql`
+      SELECT ${FEATURE_FIELDS}, ${base} AS base
       FROM features, to_tsquery('simple', ${tsquery}) query
-      WHERE importance >= ${TOP_IMPORTANCE} AND search @@ query ${countries}
-      ORDER BY score DESC LIMIT ${limit * 3}`,
-    short && !o.near
+      WHERE importance >= ${TOP_IMPORTANCE} AND search @@ query ${filters}
+      ORDER BY ${cheap} DESC LIMIT ${shortlist}`),
+    short && !f.near
       ? Promise.resolve([] as Hit[])
-      : sql<Hit[]>`
-      SELECT * FROM (
-        SELECT ${FEATURE_FIELDS}, ${score} AS score
-        FROM (
-          SELECT * FROM features, to_tsquery('simple', ${tsquery}) query
-          WHERE importance < ${TOP_IMPORTANCE} AND search @@ query ${countries} ${around}
-          LIMIT ${TAIL_CANDIDATES}
-        ) candidates
-      ) scored ORDER BY score DESC LIMIT ${limit * 3}`,
+      : rescore(sql`
+      SELECT ${FEATURE_FIELDS}, ${base} AS base
+      FROM (
+        SELECT * FROM features, to_tsquery('simple', ${tsquery}) query
+        WHERE importance < ${TOP_IMPORTANCE} AND search @@ query ${filters} ${short ? around : sql``}
+        LIMIT ${TAIL_CANDIDATES}
+      ) candidates
+      ORDER BY ${cheap} DESC LIMIT ${shortlist}`),
   ]);
   let hits = dedupe([...top, ...tail].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)));
 
-  // "rue de la loi 16": the number on the streets that matched.
-  if (numbers.length) {
+  // "rue de la loi 16": the number on the streets that matched, in the order the streets ranked.
+  const layers = f.layers?.length ? f.layers : settings().results.layers;
+  if (numbers.length && layers.includes("house")) {
     const streets = hits.filter((h) => h.layer === "street").slice(0, 5);
     if (streets.length) {
-      // In the order the streets ranked, the exact number first ("16" before "160").
       const houses = await sql<Hit[]>`
         SELECT ${ADDRESS_FIELDS}, 2 AS score
         FROM addresses a
@@ -144,42 +219,165 @@ export async function autocomplete(q: string, o: AutocompleteOptions = {}): Prom
   // Typos: nothing (or little) matched word for word.
   if (hits.length < Math.min(3, limit)) {
     const fuzzy = await sql<Hit[]>`
-      SELECT ${FEATURE_FIELDS}, similarity(geo_norm(name), ${phrase}) + importance ${nearBonus(o.near)} AS score
+      SELECT ${FEATURE_FIELDS}, similarity(geo_norm(name), ${phrase}) + ${r.importance}::float8 * importance ${nearBonus(f.near)} AS score
       FROM features
-      WHERE geo_norm(name) % ${phrase} ${countries}
+      WHERE geo_norm(name) % ${phrase} ${filters}
       ORDER BY score DESC
       LIMIT ${limit}`;
     hits = dedupe([...hits, ...fuzzy]);
   }
-  return hits.slice(0, limit);
+  return hits.slice(0, wanted);
 }
 
 export interface ReverseOptions {
   /** Metres. */
   radius?: number;
   limit?: number;
+  layers?: string[];
 }
 
-/** The nearest house number, street and the areas the point is in. */
-export async function reverse(lat: number, lon: number, o: ReverseOptions = {}) {
-  const radius = o.radius ?? 1000;
+/**
+ * What's at a point: the nearest house number and street within the radius, then the areas the
+ * point is in, from the smallest (district) to the country.
+ */
+export async function reverse(lat: number, lon: number, o: ReverseOptions = {}): Promise<Hit[]> {
+  const radius = o.radius ?? settings().results.reverseRadius;
+  const layers = o.layers?.length ? o.layers : settings().results.layers;
   const pt = sql`ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)`;
-  const [houses, streets, areas] = await Promise.all([
-    sql<Hit[]>`
+  const want = (l: string) => layers.includes(l);
+  const areaLayers = layers.filter((l) => ["locality", "district", "city", "county", "state", "country"].includes(l));
+  const [houses, pois, streets, areas] = await Promise.all([
+    want("house")
+      ? sql<Hit[]>`
       SELECT * FROM (
         SELECT ${ADDRESS_FIELDS}, ST_Distance(a.centroid::geography, ${pt}::geography) AS distance
         FROM addresses a ORDER BY a.centroid <-> ${pt} LIMIT 5
-      ) x WHERE distance <= ${radius} ORDER BY distance LIMIT ${o.limit ?? 1}`,
-    sql<Hit[]>`
+      ) x WHERE distance <= ${radius} ORDER BY distance LIMIT 1`
+      : Promise.resolve([] as Hit[]),
+    want("house")
+      ? sql<Hit[]>`
+      SELECT * FROM (
+        SELECT ${FEATURE_FIELDS}, ST_Distance(centroid::geography, ${pt}::geography) AS distance
+        FROM features WHERE layer = 'house' AND housenumber IS NOT NULL ORDER BY centroid <-> ${pt} LIMIT 5
+      ) x WHERE distance <= ${radius} ORDER BY distance LIMIT 1`
+      : Promise.resolve([] as Hit[]),
+    want("street")
+      ? sql<Hit[]>`
       SELECT * FROM (
         SELECT ${FEATURE_FIELDS}, ST_Distance(geom::geography, ${pt}::geography) AS distance
         FROM features WHERE layer = 'street' AND geom IS NOT NULL ORDER BY geom <-> ${pt} LIMIT 10
-      ) x WHERE distance <= ${radius} ORDER BY distance LIMIT ${o.limit ?? 1}`,
-    sql<Hit[]>`
+      ) x WHERE distance <= ${radius} ORDER BY distance LIMIT 1`
+      : Promise.resolve([] as Hit[]),
+    areaLayers.length
+      ? sql<Hit[]>`
       SELECT ${FEATURE_FIELDS}, 0 AS distance
       FROM features
-      WHERE layer IN ('district', 'city', 'county', 'state', 'country') AND geom && ${pt} AND ST_Intersects(geom, ${pt})
-      ORDER BY array_position(ARRAY['district', 'city', 'county', 'state', 'country'], layer)`,
+      WHERE layer = ANY(${areaLayers}) AND geom && ${pt} AND ST_Intersects(geom, ${pt})
+      ORDER BY array_position(ARRAY['locality', 'district', 'city', 'county', 'state', 'country'], layer), ST_Area(geom)`
+      : Promise.resolve([] as Hit[]),
   ]);
-  return { houses, streets, areas };
+  // The closer of an address and a named place with a number (a shop at that address).
+  const house = [...houses, ...pois].sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0)).slice(0, 1);
+  return [...house, ...streets, ...areas].slice(0, o.limit ?? 10);
+}
+
+// ---------- Output ----------
+
+let countryNames = new Map<string, Record<string, string>>();
+
+/** Country names, for labels (reloaded after an import). */
+export async function loadCountries() {
+  const rows = await sql<{ code: string; names: Record<string, string> }[]>`SELECT code, names FROM countries`;
+  countryNames = new Map(rows.map((r) => [r.code, r.names]));
+}
+
+function country(code: string | null, lang: string): string | null {
+  if (!code) return null;
+  const n = countryNames.get(code);
+  return n?.[`name:${lang}`] ?? n?.["name:en"] ?? n?.name ?? code.toUpperCase();
+}
+
+/** A hit in the requested language: its own name and address parts when the region kept them. */
+function localized(h: Hit, lang: string) {
+  const i18n = h.addressI18n?.[lang] ?? {};
+  const name = (h.names?.[lang] as string | undefined) ?? h.name;
+  return {
+    name,
+    street: i18n.street ?? h.street,
+    district: i18n.district ?? h.district,
+    city: i18n.city ?? h.city,
+    county: i18n.county ?? h.county,
+    state: i18n.state ?? h.state,
+    country: country(h.countryCode, lang),
+  };
+}
+
+const AREA_LAYERS = new Set(["city", "county", "state", "country"]);
+
+/** "Rue de la Loi 16, 1000 Bruxelles, Belgique". */
+function label(h: Hit, l: ReturnType<typeof localized>): string {
+  const streetLine = l.street ? [l.street, h.housenumber].filter(Boolean).join(" ") : null;
+  const place = [h.postcode, l.city].filter(Boolean).join(" ");
+  const parts = AREA_LAYERS.has(h.layer) ? [l.name, l.state !== l.name ? l.state : null, l.country] : [l.name, streetLine, place || l.district, l.country];
+  return [...new Set(parts.filter((p): p is string => !!p))].join(", ");
+}
+
+/** GeoPol's own format (/v1/…). */
+export function toResults(hits: Hit[], lang: string) {
+  return hits.map((h) => {
+    const l = localized(h, lang);
+    return {
+      id: `${h.osmType}${h.osmId}`,
+      layer: h.layer,
+      label: label(h, l),
+      name: l.name,
+      address: {
+        housenumber: h.housenumber,
+        street: l.street,
+        postcode: h.postcode,
+        district: l.district,
+        city: l.city,
+        county: l.county,
+        state: l.state,
+        country: l.country,
+        countryCode: h.countryCode?.toUpperCase() ?? null,
+      },
+      lat: h.lat,
+      lon: h.lon,
+      extent: h.extent,
+      ...(h.distance !== undefined ? { distance: Math.round(h.distance) } : {}),
+      osm: { type: h.osmType, id: Number(h.osmId), key: h.osmKey, value: h.osmValue },
+      region: h.region,
+    };
+  });
+}
+
+/** Photon's GeoJSON (/api, /reverse): what gps, llip, concerts and maps already read. */
+export function toPhoton(hits: Hit[], lang: string) {
+  return {
+    type: "FeatureCollection",
+    features: hits.map((h) => {
+      const l = localized(h, lang);
+      const props: Record<string, unknown> = {
+        osm_type: h.osmType,
+        osm_id: Number(h.osmId),
+        osm_key: h.osmKey,
+        osm_value: h.osmValue,
+        type: h.layer,
+        name: l.name,
+        housenumber: h.housenumber,
+        street: l.street,
+        postcode: h.postcode,
+        district: l.district,
+        city: l.city,
+        county: l.county,
+        state: l.state,
+        country: l.country,
+        countrycode: h.countryCode?.toUpperCase(),
+        extent: h.extent,
+      };
+      for (const k of Object.keys(props)) if (props[k] === null || props[k] === undefined) delete props[k];
+      return { type: "Feature", geometry: { type: "Point", coordinates: [h.lon, h.lat] }, properties: props };
+    }),
+  };
 }

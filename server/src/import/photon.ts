@@ -107,11 +107,12 @@ export interface Rows {
 export function placeRows(p: PhotonPlace, o: ImportOptions): Rows {
   const a = p.address ?? {};
   const centroid = `SRID=4326;POINT(${p.centroid[0]} ${p.centroid[1]})`;
+  // Postcodes are made up by Photon, not OSM objects: no type or id of their own ("P" + Photon's place id).
   const common = [
     p.place_id,
     o.region,
-    p.object_type,
-    p.object_id,
+    p.object_type ?? "P",
+    p.object_id ?? p.place_id,
     p.osm_key,
     p.osm_value,
   ];

@@ -11,6 +11,11 @@
   [![Node.js](https://img.shields.io/badge/Node.js-24-339933)](https://nodejs.org)
   [![PostGIS](https://img.shields.io/badge/PostGIS-3.5-336791)](https://postgis.net)
   [![Web](https://img.shields.io/badge/web-geo.bayfield.dev-brightgreen)](https://geo.bayfield.dev)
+
+  <br />
+  <br />
+
+  <img src="docs/screenshots/regions.jpg" alt="The region map: pick countries or a whole continent to install" width="900" />
 </div>
 
 
@@ -22,6 +27,7 @@ This is a personal project built for my own use, not a polished product: expect 
 ## 📋 • Table of Contents
 
 - [📖 • Overview](#--overview)
+- [📸 • Screenshots](#--screenshots)
 - [🧩 • How It Works](#--how-it-works)
 - [🔌 • API](#--api)
 - [🛠️ • Tech Stack](#️--tech-stack)
@@ -52,6 +58,18 @@ The dashboard is built like my other apps ([Calendar](https://github.com/PaulBay
 - **Settings, live**: access and limits, CORS, default and maximum results, layers, default language, ranking weights, languages kept and house numbers for new imports, update schedule
 - **Overview**: places served, disk used, requests over 30 days, response times (p50/p95)
 - **API docs**, with examples pointing at your server
+
+
+## 📸 • Screenshots
+
+| | |
+|---|---|
+| <img src="docs/screenshots/overview.jpg" alt="Overview" /> | <img src="docs/screenshots/playground.jpg" alt="Playground" /> |
+| **Overview**: places served, disk, requests over 30 days, response times | **Playground**: autocomplete, search and reverse on a map, with timings and the JSON |
+| <img src="docs/screenshots/regions.jpg" alt="Regions" /> | <img src="docs/screenshots/api-keys.jpg" alt="API keys" /> |
+| **Regions**: click a country or a continent to install it; imports run in the background | **API keys**: one per app, with endpoints, limits, allowed sites or IPs, and usage |
+| <img src="docs/screenshots/api-docs.jpg" alt="API docs" /> | <img src="docs/screenshots/settings.jpg" alt="Settings" /> |
+| **API docs**: every parameter, with examples pointing at your server | **Settings**: access, results, ranking and data, applied live |
 
 
 ## 🧩 • How It Works

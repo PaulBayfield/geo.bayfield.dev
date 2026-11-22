@@ -6,9 +6,10 @@ import type { GeoJSONSource } from "maplibre-gl";
 import { api, type CatalogRegion, type Region, type ServiceSettings } from "../lib/api";
 import { useApp } from "../lib/app";
 import { boundsOf, loadCountryShapes, regionCovers, type CountryShapes } from "../lib/countries";
+import { isoByName } from "../lib/flags";
 import { invalidate, useApi } from "../lib/hooks";
 import { useSettings } from "../lib/settings";
-import { ConfirmDialog, Spinner, useToast } from "./common";
+import { ConfirmDialog, Flags, Spinner, useToast } from "./common";
 import { MapCanvas, type MapInstance } from "./MapCanvas";
 import { Download, RefreshCw, Search, Trash, X } from "./icons";
 import { Switch } from "./settings/common";
@@ -48,6 +49,14 @@ export function RegionsPage() {
   const byCountry = useMemo(() => {
     const m = new Map<string, CatalogRegion>();
     if (base) for (const r of catalogReq.data ?? []) for (const name of regionCovers(r, base)) if (!m.has(name)) m.set(name, r);
+    return m;
+  }, [catalogReq.data, base]);
+
+  /** Each catalog region's countries, as ISO codes (for flags). */
+  const flagsOf = useMemo(() => {
+    const iso = base ? isoByName(base) : new Map<string, string>();
+    const m = new Map<string, string[]>();
+    if (base) for (const r of catalogReq.data ?? []) m.set(r.id, regionCovers(r, base).map((n) => iso.get(n)).filter((c): c is string => !!c));
     return m;
   }, [catalogReq.data, base]);
 
@@ -163,6 +172,8 @@ export function RegionsPage() {
             key={selected.id}
             region={selected}
             installed={installed.get(selected.id)}
+            flags={flagsOf.get(selected.id) ?? []}
+            flagsOf={flagsOf}
             busy={busy.has(selected.id)}
             defaults={serviceSettings?.data}
             countries={selected.isContinent ? (catalogReq.data ?? []).filter((r) => r.continent === selected.continent && !r.isContinent) : []}
@@ -198,7 +209,8 @@ export function RegionsPage() {
                     return (
                       <tr key={r.id}>
                         <td>
-                          <button className="link-button strong" onClick={() => entry && setSelected(entry)}>
+                          <button className="link-button strong with-flag" onClick={() => entry && setSelected(entry)}>
+                            <Flags codes={r.countries.length ? r.countries : (flagsOf.get(r.id) ?? [])} />
                             {r.name}
                           </button>
                           <div className="small muted">
@@ -297,6 +309,7 @@ export function RegionsPage() {
                     const s = status(r.id);
                     return (
                       <button key={r.id} className={`catalog-item ${s}${selected?.id === r.id ? " active" : ""}`} onClick={() => setSelected(r)}>
+                        {!r.isContinent && <Flags codes={flagsOf.get(r.id) ?? []} max={2} count={false} />}
                         <span className="catalog-name">
                           {r.isContinent ? t("wholeContinent") : r.name}
                         </span>
@@ -337,6 +350,8 @@ function RegionCard({
   busy,
   defaults,
   countries,
+  flags,
+  flagsOf,
   statusOf,
   onPick,
   onInstall,
@@ -348,6 +363,8 @@ function RegionCard({
   defaults?: ServiceSettings["data"];
   /** For a continent: its countries, to pick one. */
   countries: CatalogRegion[];
+  flags: string[];
+  flagsOf: Map<string, string[]>;
   statusOf: (id: string) => Status;
   onPick: (r: CatalogRegion) => void;
   onInstall: (o: { languages: string[]; houseNumbers: boolean }) => void;
@@ -363,7 +380,10 @@ function RegionCard({
     <div className="region-card">
       <div className="region-card-head">
         <div>
-          <h3>{region.name}</h3>
+          <h3>
+            <Flags codes={flags} max={6} size={15} />
+            {region.name}
+          </h3>
           <span className="small muted">{region.path}</span>
         </div>
         <button className="icon-button small" aria-label={t("close")} onClick={onClose}>
@@ -398,6 +418,7 @@ function RegionCard({
             {countries.map((c) => (
               <button key={c.id} className={`country-chip ${statusOf(c.id)}`} onClick={() => onPick(c)} title={c.bytes ? f.bytes(c.bytes) : undefined}>
                 {statusOf(c.id) !== "available" && <span className={`region-dot${statusOf(c.id) === "busy" ? " busy" : ""}`} />}
+                <Flags codes={flagsOf.get(c.id) ?? []} max={2} size={11} count={false} />
                 {c.name}
               </button>
             ))}

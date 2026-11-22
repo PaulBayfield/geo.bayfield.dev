@@ -8,6 +8,7 @@ import { useApi } from "../lib/hooks";
 import { useSettings } from "../lib/settings";
 import type { StringKey } from "../lib/i18n";
 import { NAV } from "./Sidebar";
+import { Flags } from "./common";
 import { Gear, Globe, MapPin, Search } from "./icons";
 
 interface Result {
@@ -67,8 +68,8 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
     };
     const out: Result[] = [];
     for (const n of NAV) if (keep(t(n.label))) out.push({ key: `page:${n.page}`, section: "pages", title: t(n.label), icon: n.icon, run: done(() => navigate({ name: n.page })) });
-    for (const r of regions ?? []) if (q && keep(r.name)) out.push({ key: `region:${r.id}`, section: "regions", title: r.name, extra: f.bytes(r.bytes), icon: <Globe size={16} />, run: done(() => navigate({ name: "regions" })) });
-    for (const p of places) out.push({ key: `place:${p.id}`, section: "places", title: p.label, extra: t(`layer_${p.layer}` as StringKey), icon: <MapPin size={16} />, run: done(() => navigate({ name: "playground" })) });
+    for (const r of regions ?? []) if (q && keep(r.name)) out.push({ key: `region:${r.id}`, section: "regions", title: r.name, extra: f.bytes(r.bytes), icon: r.countries.length ? <Flags codes={r.countries} max={1} size={12} /> : <Globe size={16} />, run: done(() => navigate({ name: "regions" })) });
+    for (const p of places) out.push({ key: `place:${p.id}`, section: "places", title: p.label, extra: t(`layer_${p.layer}` as StringKey), icon: p.address.countryCode ? <Flags codes={[p.address.countryCode]} size={12} /> : <MapPin size={16} />, run: done(() => navigate({ name: "playground" })) });
     if (q) for (const s of SETTINGS.filter((s) => keep(t(s.label)))) out.push({ key: `settings:${s.id}`, section: "settings", title: t(s.label), icon: <Gear size={16} />, run: done(() => openSettings(s.id)) });
     return out;
   }, [q, regions, places, t, f, navigate, openSettings, onClose]);

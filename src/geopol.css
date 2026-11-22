@@ -787,3 +787,49 @@ code,
 .region-card > * {
   flex-shrink: 0;
 }
+
+/* Flags */
+.flags {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+.flag {
+  display: block;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  object-fit: cover;
+}
+.flags .flag + .flag {
+  margin-left: -5px;
+}
+.flags-more {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.region-card h3 .flags {
+  margin-right: 8px;
+  vertical-align: -1px;
+}
+.with-flag,
+.result-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.result-label {
+  display: block;
+}
+.result-label .flags {
+  display: inline-flex;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.catalog-item .flags,
+.country-chip .flags {
+  margin-right: 2px;
+}
+.sidebar-row .flags {
+  margin-left: -2px;
+}

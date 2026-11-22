@@ -48,7 +48,7 @@ const NAMES: Record<string, string> = {
   "haiti-and-domrep": "Haiti & Dominican Republic",
   kenia: "Kenya",
   isreal: "Israel & Palestine",
-  "africa-eastern-islands": "Indian Ocean islands (Madagascar…)",
+  "africa-eastern-islands": "Madagascar & islands",
   "south-america-north": "Venezuela, Guyana & Suriname",
   "south-atlantic": "Falklands & South Georgia",
 };

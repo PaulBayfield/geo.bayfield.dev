@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSettings } from "../lib/settings";
+import { flagUrl } from "../lib/flags";
 import { Check, Copy } from "./icons";
 
 /** A button that opens a menu below it; closes on outside click and Escape. */
@@ -168,4 +169,21 @@ export function CopyButton({ text, className = "icon-button small", label }: { t
 
 export function Spinner() {
   return <span className="spinner" aria-hidden="true" />;
+}
+
+/** A country's flag (or several, overlapping, for a group of countries). Nothing when unknown. */
+export function Flags({ codes, max = 3, size = 14, count = true }: { codes: (string | null | undefined)[]; max?: number; size?: number; /** "+4" after the flags shown. */ count?: boolean }) {
+  const urls = [...new Set(codes.filter(Boolean).map((c) => c!.toLowerCase()))]
+    .map((c) => [c, flagUrl(c)] as const)
+    .filter((x): x is readonly [string, string] => !!x[1]);
+  if (!urls.length) return null;
+  const shown = urls.slice(0, max);
+  return (
+    <span className="flags" style={{ height: size }} title={urls.map(([c]) => c.toUpperCase()).join(", ")}>
+      {shown.map(([c, url]) => (
+        <img key={c} className="flag" src={url} alt="" width={Math.round((size * 4) / 3)} height={size} loading="lazy" />
+      ))}
+      {count && urls.length > max && <span className="flags-more">+{urls.length - max}</span>}
+    </span>
+  );
 }

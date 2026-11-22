@@ -42,7 +42,16 @@ api.get("/overview", async (c) => {
 // ---------- Regions, the catalog, imports ----------
 
 api.get("/regions", async (c) => {
-  const [regions, sizes] = await Promise.all([sql`SELECT * FROM regions ORDER BY name`, regionSizes()]);
+  // The countries a region holds, from its own country and state areas (a few rows each, by index).
+  const [regions, sizes] = await Promise.all([
+    sql`
+      SELECT r.*, array(
+        SELECT DISTINCT f.country_code FROM features f
+        WHERE f.region = r.id AND f.layer IN ('country', 'state') AND f.country_code IS NOT NULL ORDER BY 1
+      ) AS countries
+      FROM regions r ORDER BY r.name`,
+    regionSizes(),
+  ]);
   return c.json(regions.map((r) => ({ ...r, bytes: sizes[r.id as string] ?? 0 })));
 });
 

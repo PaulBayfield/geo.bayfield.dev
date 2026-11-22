@@ -5,6 +5,7 @@ import { useApi } from "../lib/hooks";
 import type { Page } from "../lib/router";
 import { useSettings } from "../lib/settings";
 import type { StringKey } from "../lib/i18n";
+import { Flags } from "./common";
 import { BookOpen, Crosshair, Gauge, Globe, Key, PanelLeft, Search } from "./icons";
 
 const MIN_W = 200;
@@ -60,6 +61,7 @@ export function Sidebar() {
           {(regions ?? []).map((r) => (
             <button key={r.id} className="sidebar-row" title={r.path} onClick={() => navigate({ name: "regions" })}>
               <span className={`region-dot${busy.has(r.id) ? " busy" : ""}`} />
+              <Flags codes={r.countries} max={2} size={12} />
               <span className="row-label">{r.name}</span>
               <span className="row-meta">{f.bytes(r.bytes)}</span>
             </button>

@@ -107,6 +107,8 @@ export interface Region {
   houseNumbers: boolean;
   autoUpdate: boolean;
   bytes: number;
+  /** ISO codes of the countries it holds (lowercase). */
+  countries: string[];
 }
 
 /** A region that can be installed (GraphHopper's Photon dumps). */

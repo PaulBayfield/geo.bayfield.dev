@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, query, type GeoResult } from "../lib/api";
 import { useSettings } from "../lib/settings";
 import { MapCanvas, maplibregl, type MapInstance } from "./MapCanvas";
-import { CopyButton } from "./common";
+import { CopyButton, Flags } from "./common";
 import { Code, Crosshair, MapPin, Search } from "./icons";
 
 type Mode = "autocomplete" | "search" | "reverse";
@@ -152,7 +152,10 @@ export function PlaygroundPage() {
             <button key={`${r.id}-${i}`} className={`result-row${i === selected ? " active" : ""}`} onClick={() => setSelected(i)}>
               <span className="result-index">{i + 1}</span>
               <span className="result-main">
-                <span className="result-label">{r.label}</span>
+                <span className="result-label">
+                  <Flags codes={[r.address.countryCode]} size={11} />
+                  {r.label}
+                </span>
                 <span className="small muted">
                   {t(`layer_${r.layer}` as never) || r.layer} · {r.osm.key}={r.osm.value}
                   {r.distance !== undefined && ` · ${f.number(r.distance)} m`}

@@ -1,5 +1,6 @@
 // Everything set in the dashboard, live: kept in the settings table, cached here, applied at once.
 
+import { DUMP_BASE_URL } from "./config.ts";
 import { sql } from "./db.ts";
 import { bad } from "./http.ts";
 
@@ -46,6 +47,8 @@ export interface Settings {
     languages: string[];
     /** Keep house numbers in new imports (most of the data). */
     houseNumbers: boolean;
+    /** Where the Photon dumps come from: GraphHopper's server, or a mirror with the same layout. */
+    dumpBaseUrl: string;
     /** Photon dump version to download ("1.0"). */
     dumpVersion: string;
     /** Update regions automatically every this many days (0: never). */
@@ -57,7 +60,7 @@ export const DEFAULTS: Settings = {
   access: { requireKey: false, requireKeyFor: [], ipPerMinute: 120, keyPerMinute: 600, corsOrigins: ["*"] },
   results: { defaultLimit: 8, maxLimit: 50, defaultLanguage: "fr", layers: ["house", "street", "locality", "district", "city", "county", "state", "country", "other"], reverseRadius: 1000 },
   ranking: { importance: 1, prefix: 0.6, nameMatch: 0.4, near: 0.5, nearKm: 50 },
-  data: { languages: ["fr", "en", "de", "nl"], houseNumbers: true, dumpVersion: "1.0", updateEveryDays: 7 },
+  data: { languages: ["fr", "en", "de", "nl"], houseNumbers: true, dumpBaseUrl: DUMP_BASE_URL, dumpVersion: "1.0", updateEveryDays: 7 },
 };
 
 let current: Settings = structuredClone(DEFAULTS);
@@ -87,6 +90,18 @@ const strings = (v: unknown, name: string, test: (s: string) => boolean) => {
   if (!Array.isArray(v) || !v.every((s) => typeof s === "string" && test(s))) throw bad(`${name} isn't valid`);
   return [...new Set(v as string[])];
 };
+
+/** An http(s) URL without a trailing slash, for the dump server. */
+function dumpUrl(v: unknown): string {
+  const s = String(v ?? "").trim().replace(/\/+$/, "");
+  try {
+    const u = new URL(s);
+    if ((u.protocol === "https:" || u.protocol === "http:") && !u.search && !u.hash) return s;
+  } catch {
+    // Reported below.
+  }
+  throw bad("The download server should be an http(s) address, like https://download1.graphhopper.com/public");
+}
 
 /** Checks a section sent by the dashboard and returns it complete (missing fields keep their value). */
 function validate<K extends keyof Settings>(key: K, input: Record<string, unknown>): Settings[K] {
@@ -122,6 +137,7 @@ function validate<K extends keyof Settings>(key: K, input: Record<string, unknow
       return {
         languages: strings(merged.languages, "Languages", (s) => LANG.test(s)),
         houseNumbers: bool(merged.houseNumbers, "House numbers"),
+        dumpBaseUrl: dumpUrl(merged.dumpBaseUrl),
         dumpVersion: /^[\w.-]{1,20}$/.test(String(merged.dumpVersion)) ? String(merged.dumpVersion) : (() => { throw bad("Dump version isn't valid"); })(),
         updateEveryDays: num(merged.updateEveryDays, 0, 365, "Update every"),
       } as Settings[K];

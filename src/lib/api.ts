@@ -172,7 +172,7 @@ export interface ServiceSettings {
   access: { requireKey: boolean; requireKeyFor: Endpoint[]; ipPerMinute: number; keyPerMinute: number; corsOrigins: string[] };
   results: { defaultLimit: number; maxLimit: number; defaultLanguage: string; layers: string[]; reverseRadius: number };
   ranking: { importance: number; prefix: number; nameMatch: number; near: number; nearKm: number };
-  data: { languages: string[]; houseNumbers: boolean; dumpVersion: string; updateEveryDays: number };
+  data: { languages: string[]; houseNumbers: boolean; dumpBaseUrl: string; dumpVersion: string; updateEveryDays: number };
 }
 
 export interface Overview {

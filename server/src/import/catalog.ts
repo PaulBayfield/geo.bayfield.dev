@@ -1,8 +1,10 @@
 // The regions that can be installed: GraphHopper publishes a Photon dump per continent and per country
-// (or group of countries) at DUMP_BASE_URL/<continent>/<country>/photon-dump-<country>-<version>-latest.jsonl.zst.
+// (or group of countries) at <server>/<continent>/<country>/photon-dump-<country>-<version>-latest.jsonl.zst.
+// The server is set in Settings → Data (GeoPol's default: DUMP_BASE_URL, GraphHopper's mirror); any mirror
+// with the same layout works.
 // Read from its index pages, with each dump's size and date (HEAD), cached for a few hours.
 
-import { DUMP_BASE_URL } from "../config.ts";
+import { HttpError } from "../http.ts";
 import { settings } from "../settings.ts";
 
 export interface CatalogRegion {
@@ -58,7 +60,7 @@ const title = (slug: string) => NAMES[slug] ?? slug.split("-").map((w) => w[0].t
 /** The folders an index page links to, under `base`. */
 async function folders(base: string): Promise<string[]> {
   const res = await fetch(`${base}/index.html`, { signal: AbortSignal.timeout(20_000) });
-  if (!res.ok) throw new Error(`The dump index answered ${res.status}`);
+  if (!res.ok) throw new Error(`it answered ${res.status}`);
   const html = await res.text();
   const out = new Set<string>();
   for (const m of html.matchAll(/href="([^"]+)\/index\.html"/g)) {
@@ -95,30 +97,34 @@ async function pool<T, R>(items: T[], n: number, fn: (item: T) => Promise<R>): P
   return out;
 }
 
-const dumpUrl = (path: string, version: string) => `${DUMP_BASE_URL}/${path}/photon-dump-${path.split("/").at(-1)}-${version}-latest.jsonl.zst`;
+const dumpUrl = (base: string, path: string, version: string) => `${base}/${path}/photon-dump-${path.split("/").at(-1)}-${version}-latest.jsonl.zst`;
 
-let cached: { regions: CatalogRegion[]; version: string; until: number } | null = null;
+let cached: { regions: CatalogRegion[]; key: string; until: number } | null = null;
 let pending: Promise<CatalogRegion[]> | null = null;
 
 export async function catalog(force = false): Promise<CatalogRegion[]> {
-  const version = settings().data.dumpVersion;
-  if (!force && cached && cached.version === version && cached.until > Date.now()) return cached.regions;
+  const { dumpVersion: version, dumpBaseUrl: base } = settings().data;
+  // Read again when the server or the version changes.
+  const key = `${base}|${version}`;
+  if (!force && cached && cached.key === key && cached.until > Date.now()) return cached.regions;
   pending ??= (async () => {
     try {
-      const continents = await folders(DUMP_BASE_URL);
+      const continents = await folders(base).catch((e: Error) => {
+        throw new HttpError(503, `The download server ${base} couldn't be read (${e.message}): check Settings → Data`);
+      });
       const candidates: Omit<CatalogRegion, "bytes" | "updatedAt">[] = [];
       for (const continent of continents) {
-        candidates.push({ id: continent, path: continent, name: title(continent), continent, isContinent: true, url: dumpUrl(continent, version) });
-        for (const country of await folders(`${DUMP_BASE_URL}/${continent}`).catch(() => [])) {
+        candidates.push({ id: continent, path: continent, name: title(continent), continent, isContinent: true, url: dumpUrl(base, continent, version) });
+        for (const country of await folders(`${base}/${continent}`).catch(() => [])) {
           const path = `${continent}/${country}`;
-          candidates.push({ id: `${continent}-${country}`, path, name: title(country), continent, isContinent: false, url: dumpUrl(path, version) });
+          candidates.push({ id: `${continent}-${country}`, path, name: title(country), continent, isContinent: false, url: dumpUrl(base, path, version) });
         }
       }
       const sizes = await pool(candidates, 8, (c) => head(c.url));
       // A region without a dump of this version isn't offered.
       const regions = candidates.flatMap((c, i) => (sizes[i] ? [{ ...c, ...sizes[i] }] : []));
       regions.sort((a, b) => a.continent.localeCompare(b.continent) || Number(b.isContinent) - Number(a.isContinent) || a.name.localeCompare(b.name));
-      cached = { regions, version, until: Date.now() + 6 * 60 * 60_000 };
+      cached = { regions, key, until: Date.now() + 6 * 60 * 60_000 };
       return regions;
     } finally {
       pending = null;

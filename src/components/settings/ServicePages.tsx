@@ -220,6 +220,9 @@ export function DataPage() {
           <Row label={t("updateEvery")} hint={t("updateEveryHint")}>
             <NumberField value={v.updateEveryDays} min={0} max={365} disabled={readOnly} suffix={t("days")} onSave={(updateEveryDays) => void save({ updateEveryDays })} />
           </Row>
+          <Row label={t("dumpServer")} hint={t("dumpServerHint")} stack>
+            <ListField value={[v.dumpBaseUrl]} disabled={readOnly} placeholder="https://download1.graphhopper.com/public" onSave={(d) => d[0] && void save({ dumpBaseUrl: d[0] })} />
+          </Row>
           <Row label={t("dumpVersion")} hint={t("dumpVersionHint")}>
             <ListField value={[v.dumpVersion]} disabled={readOnly} onSave={(d) => d[0] && void save({ dumpVersion: d[0] })} />
           </Row>

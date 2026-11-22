@@ -240,6 +240,8 @@ const en = {
   houseNumbersHint: "Most of the data. Off: streets, places and points of interest only (about a third of the size).",
   updateEvery: "Update regions every",
   updateEveryHint: "The dumps are refreshed weekly. 0: only when you click Update.",
+  dumpServer: "Download server",
+  dumpServerHint: "Where the Photon dumps come from: GraphHopper's server, or a mirror with the same folders (continent/country/photon-dump-…). The catalog is read again when it changes.",
   dumpVersion: "Dump version",
   dumpVersionHint: "Photon's dump format (1.0). Change it only when the catalog moves to a new one.",
   // Settings: account (as in the other apps)
@@ -567,6 +569,8 @@ const fr: Record<StringKey, string> = {
   houseNumbersHint: "L'essentiel des données. Désactivé : rues, lieux et points d'intérêt seulement (environ un tiers de la taille).",
   updateEvery: "Mettre à jour les régions tous les",
   updateEveryHint: "Les fichiers sont actualisés chaque semaine. 0 : seulement sur clic de Mettre à jour.",
+  dumpServer: "Serveur de téléchargement",
+  dumpServerHint: "D'où viennent les fichiers Photon : le serveur de GraphHopper, ou un miroir avec les mêmes dossiers (continent/pays/photon-dump-…). Le catalogue est relu quand il change.",
   dumpVersion: "Version des fichiers",
   dumpVersionHint: "Le format des fichiers Photon (1.0). À changer seulement quand le catalogue passe à un nouveau format.",
   profile: "Profil",

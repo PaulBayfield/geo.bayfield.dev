@@ -46,6 +46,11 @@ const NAMES: Record<string, string> = {
   "congo-brazzaville": "Congo",
   "ivory-coast": "Côte d'Ivoire",
   "haiti-and-domrep": "Haiti & Dominican Republic",
+  kenia: "Kenya",
+  isreal: "Israel & Palestine",
+  "africa-eastern-islands": "Indian Ocean islands (Madagascar…)",
+  "south-america-north": "Venezuela, Guyana & Suriname",
+  "south-atlantic": "Falklands & South Georgia",
 };
 
 const title = (slug: string) => NAMES[slug] ?? slug.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");

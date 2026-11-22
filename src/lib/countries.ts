@@ -61,8 +61,30 @@ export function boundsOf(features: CountryShape[]): [number, number, number, num
   return Number.isFinite(w) ? [w, s, e, n] : null;
 }
 
-/** Folder → Natural Earth country names, when they differ. */
+/**
+ * Folder → Natural Earth country names, when they differ. The groups' members were read from the dumps
+ * themselves (their places' country codes, November 2026).
+ */
 const COVERS: Record<string, string[]> = {
+  // Groups of countries
+  "africa-eastern-islands": ["Madagascar", "Mauritius", "Seychelles", "Comoros"],
+  "central-africa": ["Dem. Rep. Congo", "Cameroon", "Angola", "Chad", "Gabon", "Congo", "Central African Rep.", "Eq. Guinea", "São Tomé and Principe"],
+  "horn-of-africa": ["Ethiopia", "Somalia", "Somaliland", "Djibouti", "Eritrea"],
+  "northern-africa": ["Egypt", "Algeria", "Morocco", "Tunisia", "Sudan", "Libya", "W. Sahara"],
+  "southern-africa": ["South Africa", "Namibia", "Botswana", "Lesotho", "eSwatini"],
+  "western-africa": ["Côte d'Ivoire", "Ghana", "Mali", "Burkina Faso", "Senegal", "Benin", "Niger", "Togo", "Guinea", "Liberia", "Sierra Leone", "Mauritania", "Cabo Verde", "Gambia", "Guinea-Bissau"],
+  "arabian-peninsula": ["Saudi Arabia", "United Arab Emirates", "Kuwait", "Yemen", "Qatar", "Oman", "Bahrain"],
+  "asia-indian-ocean": ["Sri Lanka", "Maldives", "Br. Indian Ocean Ter."],
+  "central-asia": ["Kazakhstan", "Uzbekistan", "Kyrgyzstan", "Tajikistan", "Turkmenistan"],
+  korea: ["South Korea", "North Korea"],
+  oceania: ["Papua New Guinea", "Fiji", "Samoa", "Solomon Is.", "Vanuatu", "Micronesia", "Tonga", "Marshall Is.", "Cook Is.", "Kiribati", "Palau", "Niue", "Nauru", "Pitcairn Is."],
+  caribbean: ["Trinidad and Tobago", "Cuba", "Dominican Rep.", "Haiti", "Jamaica", "Bahamas", "Barbados", "Saint Lucia", "Cayman Is.", "Dominica", "St. Kitts and Nevis", "Antigua and Barb.", "Grenada", "St. Vin. and Gren.", "Turks and Caicos Is.", "British Virgin Is.", "Anguilla", "Montserrat"],
+  "central-america": ["Costa Rica", "Guatemala", "Nicaragua", "Panama", "El Salvador", "Honduras", "Belize"],
+  "south-america-north": ["Venezuela", "Suriname", "Guyana"],
+  "south-atlantic": ["Falkland Is.", "S. Geo. and the Is."],
+  // Folder names spelled differently
+  kenia: ["Kenya"],
+  isreal: ["Israel", "Palestine"],
   "france-monacco": ["France"],
   "british-islands": ["United Kingdom", "Ireland"],
   baltics: ["Estonia", "Latvia", "Lithuania"],
@@ -70,7 +92,7 @@ const COVERS: Record<string, string[]> = {
   "iceland-faroe": ["Iceland"],
   "bosnia-herzegovina": ["Bosnia and Herz."],
   "czech-republic": ["Czechia"],
-  macedonia: ["North Macedonia"],
+  macedonia: ["Macedonia"],
   luxemburg: ["Luxembourg"],
   "congo-democratic-republic": ["Dem. Rep. Congo"],
   "congo-brazzaville": ["Congo"],

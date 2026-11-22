@@ -34,6 +34,7 @@ export function regionIndexes(features: string, addresses: string): string {
     CREATE INDEX ON ${features} USING gin (search);
     CREATE INDEX ON ${features} USING gin (search) WHERE importance >= ${TOP_IMPORTANCE};
     CREATE INDEX ON ${features} USING gin (geo_norm(name) gin_trgm_ops);
+    CREATE INDEX ON ${features} USING gin (geo_norm(name) gin_trgm_ops) WHERE importance >= ${TOP_IMPORTANCE};
     CREATE INDEX ON ${features} USING gist (centroid);
     CREATE INDEX ON ${features} USING gist (geom) WHERE geom IS NOT NULL;
     CREATE INDEX ON ${features} (layer);
@@ -228,6 +229,9 @@ const MIGRATIONS: string[] = [
 
   -- The parents' partitioned indexes: the same definitions as each region's (see regionIndexes).
   ${regionIndexes("features", "addresses")}
+  `,
+  /* 2: typo search in two tiers too: the important places' names in a small trigram index of their own */ `
+  CREATE INDEX features_name_trgm_top ON features USING gin (geo_norm(name) gin_trgm_ops) WHERE importance >= ${TOP_IMPORTANCE};
   `,
 ];
 

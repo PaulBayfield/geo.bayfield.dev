@@ -216,15 +216,38 @@ export async function find(q: string, f: Filters, prefix: boolean): Promise<Hit[
     }
   }
 
-  // Typos: nothing (or little) matched word for word.
+  // Typos: nothing (or little) matched word for word. The important places first (their own small
+  // trigram index); the long tail only within 300 ms (on millions of names a vague typo can take
+  // seconds: better a miss than a slow answer).
   if (hits.length < Math.min(3, limit)) {
-    const fuzzy = await sql<Hit[]>`
-      SELECT ${FEATURE_FIELDS}, similarity(geo_norm(name), ${phrase}) + ${r.importance}::float8 * importance ${nearBonus(f.near)} AS score
+    // Spelling: the whole name (similarity) and its best-matching words (word_similarity) together, so
+    // neither short names ("Brux" for "bruxels") nor long ones ("Cognat-Lyonne" for "lyonn") win on one
+    // measure alone; then half the usual weight of importance (Bruxelles, Lyon, and the Atomium over Atos).
+    const fuzzyScore = sql`(similarity(geo_norm(name), ${phrase}) + word_similarity(${phrase}, geo_norm(name))) / 2
+      + ${r.importance / 2}::float8 * importance ${nearBonus(f.near)}`;
+    const top = await sql<(Hit & { sim: number })[]>`
+      SELECT ${FEATURE_FIELDS}, ${fuzzyScore} AS score, similarity(geo_norm(name), ${phrase}) AS sim
       FROM features
-      WHERE geo_norm(name) % ${phrase} ${filters}
+      WHERE importance >= ${TOP_IMPORTANCE} AND geo_norm(name) % ${phrase} ${filters}
       ORDER BY score DESC
       LIMIT ${limit}`;
-    hits = dedupe([...hits, ...fuzzy]);
+    // A close match among the important places is enough ("marsielle" → Marseille); otherwise look further
+    // ("atomiun" → the Atomium, a landmark but not among the most important places).
+    const close = top.some((h) => h.sim >= 0.4);
+    if (!close) {
+      const tail = await sql
+        .begin(async (tx) => {
+          await tx`SET LOCAL statement_timeout = '300ms'`;
+          return tx<Hit[]>`
+            SELECT ${FEATURE_FIELDS}, ${fuzzyScore} AS score
+            FROM features
+            WHERE importance < ${TOP_IMPORTANCE} AND geo_norm(name) % ${phrase} ${filters}
+            ORDER BY score DESC
+            LIMIT ${limit}`;
+        })
+        .catch(() => [] as Hit[]);
+      hits = dedupe([...hits, ...[...top, ...tail].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))]);
+    } else hits = dedupe([...hits, ...top]);
   }
   return hits.slice(0, wanted);
 }

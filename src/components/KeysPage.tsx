@@ -80,7 +80,7 @@ export function KeysPage({ creating, setCreating }: { creating: boolean; setCrea
                     </td>
                     <td className="small">{k.scopes.length ? k.scopes.join(", ") : t("allEndpoints")}</td>
                     <td className="small">
-                      {[k.ratePerMinute ? t("perMinute", { n: f.number(k.ratePerMinute) }) : null, k.dailyQuota ? t("perDay", { n: f.number(k.dailyQuota) }) : null, k.origins.length ? t("nSites", { n: k.origins.length }) : null, k.ips.length ? t("nIps", { n: k.ips.length }) : null]
+                      {[k.ratePerMinute ? t("perMinute", { n: f.number(k.ratePerMinute) }) : null, k.dailyQuota ? t("perDay", { n: f.number(k.dailyQuota) }) : null, k.origins.length ? t(k.origins.length === 1 ? "oneSite" : "nSites", { n: k.origins.length }) : null, k.ips.length ? t(k.ips.length === 1 ? "oneIp" : "nIps", { n: k.ips.length }) : null]
                         .filter(Boolean)
                         .join(" · ") || "—"}
                     </td>

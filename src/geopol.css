@@ -312,20 +312,27 @@ code,
 
 /* ----- Overview ----- */
 
+/* Two rows of four: usage, then what's served. */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 .stat {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   text-align: left;
   background: var(--bg);
+  transition: border-color 0.12s, background 0.12s;
+}
+.stat:hover {
+  border-color: var(--text-faint);
 }
 .stat.clickable:hover {
   background: var(--hover);
@@ -340,29 +347,318 @@ code,
   font-weight: 650;
   letter-spacing: -0.02em;
 }
-.bars {
-  height: 140px;
+.stat-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* Up and down aren't good or bad here (more traffic is neither): text ink, no status colour. */
+.delta {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+.delta.flat {
+  color: var(--text-muted);
+}
+.sparkline {
   display: flex;
   align-items: flex-end;
-  gap: 3px;
-  padding-top: 8px;
-  border-bottom: 1px solid var(--border-strong);
+  gap: 1px;
+  height: 24px;
+  margin-top: 6px;
 }
-.bar {
+.sparkline i {
   flex: 1;
   height: 100%;
   display: flex;
-  flex-direction: column-reverse;
-  border-radius: 3px 3px 0 0;
-  overflow: hidden;
-  min-width: 4px;
+  align-items: flex-end;
+  border-radius: 2px;
 }
-.bar:hover {
+.sparkline i:hover {
   background: var(--hover);
 }
-.bar span {
+.sparkline span {
   display: block;
   width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--primary);
+  opacity: 0.55;
+}
+.sparkline i:last-child span,
+.sparkline i:hover span {
+  opacity: 1;
+}
+
+/* Usage: summary figures, the stacked bars, the legend */
+.usage-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 6px 0 4px;
+}
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.figure-value {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.figure-sub {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 1.4em;
+}
+.usage-chart {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 180px auto;
+  column-gap: 8px;
+  margin-top: 4px;
+}
+.usage-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  /* Centre each label on its gridline. */
+  margin: -0.5em 0;
+}
+.usage-plot {
+  position: relative;
+  min-width: 0;
+}
+.usage-grid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.usage-grid i {
+  border-top: 1px dashed var(--border-strong);
+}
+.usage-grid i:last-child {
+  border-top: 1px solid var(--border-strong);
+}
+.usage-bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+}
+.usage-bar {
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  /* The hit area is the whole column; the bar is narrower, with a gap between bars. */
+  padding: 0 max(1px, min(4px, 12%));
+  border-radius: 4px 4px 0 0;
+  outline: none;
+  cursor: default;
+}
+.usage-bar.hover,
+.usage-bar:focus-visible {
+  background: var(--hover);
+}
+.usage-bar:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+.usage-stack {
+  width: 100%;
+  max-width: 36px;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+}
+.usage-stack span {
+  display: block;
+  min-height: 3px;
+  /* A 2px surface gap between stacked endpoints. */
+  border-top: 2px solid var(--bg);
+  transition: opacity 0.12s;
+}
+.usage-stack span:last-child {
+  border-top: 0;
+}
+.usage-stack span.dim {
+  opacity: 0.18;
+}
+/* The period in progress: lighter, as it isn't over yet. */
+.usage-bar.current .usage-stack {
+  opacity: 0.6;
+}
+.usage-bar.hover .usage-stack span {
+  filter: brightness(1.08);
+}
+.usage-x {
+  grid-column: 2;
+  display: flex;
+  padding-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.usage-x span {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+  white-space: nowrap;
+  text-align: center;
+}
+/* The latest label ends at the edge rather than past it. */
+.usage-x span:last-child {
+  display: flex;
+  justify-content: flex-end;
+}
+.usage-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.chart-tooltip {
+  position: absolute;
+  top: 0;
+  z-index: 5;
+  transform: translateX(-50%);
+  min-width: 170px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  pointer-events: none;
+}
+.chart-tooltip.start {
+  transform: translateX(-12px);
+}
+.chart-tooltip.end {
+  transform: translateX(calc(-100% + 12px));
+}
+.chart-tooltip-title {
+  color: var(--text-muted);
+}
+.chart-tooltip-total {
+  font-size: 16px;
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+.chart-tooltip-row {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.6;
+}
+/* Line keys, not boxes, at tooltip density. */
+.chart-tooltip-row i {
+  height: 2px;
+  border-radius: 1px;
+}
+.chart-tooltip-row.errors {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.chart-tooltip-row b {
+  font-weight: 600;
+}
+.usage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.usage-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+.usage-legend button:hover,
+.usage-legend button.active {
+  background: var(--hover);
+}
+.usage-legend b {
+  font-weight: 600;
+}
+
+.endpoint-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.key-prefix {
+  margin-left: 6px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+.data-table tr.clickable {
+  cursor: pointer;
+}
+.data-table tr.clickable:hover td {
+  background: var(--hover);
+}
+.key-share {
+  display: block;
+  width: 100%;
+  min-width: 48px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.key-share i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--primary);
+}
+
+/* The refresh button turns while anything loads. */
+.refresh-button.busy svg {
+  animation: spin 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .refresh-button.busy svg {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+@media (max-width: 1000px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .usage-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .usage-chart {
+    grid-template-rows: 150px auto;
+  }
+  .figure-delta-hint {
+    display: none;
+  }
 }
 
 /* ----- Activity (imports) ----- */

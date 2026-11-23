@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
 
 export function useMediaQuery(query: string): boolean {
@@ -37,6 +37,31 @@ let lastTick = Date.now();
 function tick() {
   lastTick = Date.now();
   for (const listener of liveListeners) listener();
+}
+
+/** Refetches every live hook now (the refresh button). */
+export function refreshLive() {
+  tick();
+}
+
+// ---------- Requests in flight, for the refresh button's spinner ----------
+
+let inFlight = 0;
+const flightListeners = new Set<() => void>();
+function setInFlight(delta: number) {
+  inFlight += delta;
+  for (const listener of flightListeners) listener();
+}
+
+/** Whether any useApi request is loading (background refreshes included). */
+export function useFetching(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      flightListeners.add(listener);
+      return () => flightListeners.delete(listener);
+    },
+    () => inFlight > 0,
+  );
 }
 
 function onVisible() {
@@ -90,22 +115,25 @@ export function useApi<T>(path: string | null, live = false): Loaded<T> {
     const hit = cache.get(path) as T | undefined;
     if (hit !== undefined) setData(hit);
     if (!silent) setLoading(true);
-    api<T>(path).then(
-      (value) => {
-        cache.set(path, value);
-        if (live) {
-          setData(value);
-          setError(null);
-          setLoading(false);
-        }
-      },
-      (e: Error) => {
-        if (live && !silent) {
-          setError(e.message);
-          setLoading(false);
-        }
-      },
-    );
+    setInFlight(1);
+    api<T>(path)
+      .then(
+        (value) => {
+          cache.set(path, value);
+          if (live) {
+            setData(value);
+            setError(null);
+            setLoading(false);
+          }
+        },
+        (e: Error) => {
+          if (live && !silent) {
+            setError(e.message);
+            setLoading(false);
+          }
+        },
+      )
+      .finally(() => setInFlight(-1));
     return () => {
       live = false;
     };

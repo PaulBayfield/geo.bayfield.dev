@@ -175,9 +175,20 @@ export interface ServiceSettings {
   data: { languages: string[]; houseNumbers: boolean; dumpBaseUrl: string; dumpVersion: string; updateEveryDays: number };
 }
 
+export type UsageGrain = "daily" | "weekly" | "monthly";
+export interface UsageRow {
+  period: string;
+  endpoint: Endpoint;
+  requests: number;
+  errors: number;
+}
+
 export interface Overview {
   totals: { regions: number; features: number; addresses: number; databaseBytes: number };
-  usage: { day: string; endpoint: Endpoint; requests: number; errors: number }[];
+  /** Requests per period (YYYY-MM-DD: a day, the Monday of a week, the 1st of a month) and endpoint. */
+  usage: Record<UsageGrain, UsageRow[]>;
+  /** The keys used most over 30 days (id "": requests without a key; name null: a deleted key). */
+  topKeys: { id: string; name: string | null; prefix: string | null; requests: number; errors: number }[];
   keys: { total: number; active: number };
   latency: Partial<Record<Endpoint, { samples: number; p50: number | null; p95: number | null; max: number | null }>>;
   job: { id: number; progress: JobProgress | null } | null;

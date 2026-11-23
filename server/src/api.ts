@@ -28,15 +28,29 @@ const idOf = (c: Context) => c.req.param("id") ?? "";
 // ---------- Overview ----------
 
 api.get("/overview", async (c) => {
-  const [totals] = await sql`
-    SELECT count(*)::int AS regions, coalesce(sum(features), 0)::int AS features, coalesce(sum(addresses), 0)::int AS addresses,
-           pg_database_size(current_database())::float8 AS database_bytes
-    FROM regions WHERE imported_at IS NOT NULL`;
-  const usage = await sql`
-    SELECT day::text, endpoint, sum(requests)::int AS requests, sum(errors)::int AS errors
-    FROM api_usage WHERE day > current_date - 30 GROUP BY day, endpoint ORDER BY day`;
-  const [keys] = await sql`SELECT count(*)::int AS total, count(*) FILTER (WHERE NOT disabled AND (expires_at IS NULL OR expires_at > now()))::int AS active FROM api_keys`;
-  return c.json({ totals, usage, keys, latency: latencyStats(), job: liveProgress() });
+  // Usage rolled up three ways, each window twice as long as the chart shows, so a period can be
+  // compared with the one before it: 60 days, 52 weeks (ISO, from Monday), 24 months.
+  const [[totals], daily, weekly, monthly, topKeys, [keys]] = await Promise.all([
+    sql`
+      SELECT count(*)::int AS regions, coalesce(sum(features), 0)::int AS features, coalesce(sum(addresses), 0)::int AS addresses,
+             pg_database_size(current_database())::float8 AS database_bytes
+      FROM regions WHERE imported_at IS NOT NULL`,
+    sql`
+      SELECT day::text AS period, endpoint, sum(requests)::int AS requests, sum(errors)::int AS errors
+      FROM api_usage WHERE day > current_date - 60 GROUP BY 1, 2 ORDER BY 1`,
+    sql`
+      SELECT date_trunc('week', day)::date::text AS period, endpoint, sum(requests)::int AS requests, sum(errors)::int AS errors
+      FROM api_usage WHERE day >= date_trunc('week', current_date) - interval '51 weeks' GROUP BY 1, 2 ORDER BY 1`,
+    sql`
+      SELECT date_trunc('month', day)::date::text AS period, endpoint, sum(requests)::int AS requests, sum(errors)::int AS errors
+      FROM api_usage WHERE day >= date_trunc('month', current_date) - interval '23 months' GROUP BY 1, 2 ORDER BY 1`,
+    sql`
+      SELECT u.key_id AS id, k.name, k.prefix, sum(u.requests)::int AS requests, sum(u.errors)::int AS errors
+      FROM api_usage u LEFT JOIN api_keys k ON k.id = u.key_id
+      WHERE u.day > current_date - 30 GROUP BY 1, 2, 3 ORDER BY 4 DESC LIMIT 6`,
+    sql`SELECT count(*)::int AS total, count(*) FILTER (WHERE NOT disabled AND (expires_at IS NULL OR expires_at > now()))::int AS active FROM api_keys`,
+  ]);
+  return c.json({ totals, usage: { daily, weekly, monthly }, topKeys, keys, latency: latencyStats(), job: liveProgress() });
 });
 
 // ---------- Regions, the catalog, imports ----------

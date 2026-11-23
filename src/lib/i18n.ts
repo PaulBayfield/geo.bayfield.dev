@@ -47,10 +47,40 @@ const en = {
   chooseRegions: "Choose regions",
   database: "Database",
   requestsToday: "Requests today",
-  last30DaysN: "{n} in 30 days",
   ofTotal: "of {n}",
   placesHint: "{features} named, {addresses} addresses",
-  requests30Days: "Requests, last 30 days",
+  refresh: "Refresh",
+  updatedAt: "Updated {time}",
+  requestsLast7Days: "Last 7 days",
+  requestsLast30Days: "Last 30 days",
+  yesterdayN: "Yesterday: {n}",
+  vsPrevious7: "vs the 7 days before",
+  vsPrevious30: "vs the 30 days before",
+  errorRate: "Error rate",
+  errorRateHint: "{n} errors in 30 days",
+  usage: "Usage",
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+  usageDailyHint: "Last 30 days",
+  usageWeeklyHint: "Last 26 weeks",
+  usageMonthlyHint: "Last 12 months",
+  total: "Total",
+  averagePerDay: "Per day",
+  averagePerWeek: "Per week",
+  averagePerMonth: "Per month",
+  peak: "Peak",
+  errors: "Errors",
+  vsPrevious: "vs previous period",
+  weekOf: "Week of {date}",
+  soFar: "so far",
+  noRequestsYet: "No requests in this period yet.",
+  topKeys: "Top API keys",
+  topKeysHint: "Last 30 days",
+  withoutKey: "Without a key",
+  deletedKey: "Deleted key",
+  share: "Share",
+  slowest: "Slowest",
   responseTimes: "Response times",
   responseTimesHint: "The last 1,000 requests per endpoint, since the server started.",
   endpoint: "Endpoint",
@@ -385,10 +415,40 @@ const fr: Record<StringKey, string> = {
   chooseRegions: "Choisir des régions",
   database: "Base de données",
   requestsToday: "Requêtes aujourd'hui",
-  last30DaysN: "{n} en 30 jours",
   ofTotal: "sur {n}",
   placesHint: "{features} nommés, {addresses} adresses",
-  requests30Days: "Requêtes, 30 derniers jours",
+  refresh: "Actualiser",
+  updatedAt: "Mis à jour {time}",
+  requestsLast7Days: "7 derniers jours",
+  requestsLast30Days: "30 derniers jours",
+  yesterdayN: "Hier : {n}",
+  vsPrevious7: "par rapport aux 7 jours précédents",
+  vsPrevious30: "par rapport aux 30 jours précédents",
+  errorRate: "Taux d'erreur",
+  errorRateHint: "{n} erreurs en 30 jours",
+  usage: "Utilisation",
+  daily: "Jour",
+  weekly: "Semaine",
+  monthly: "Mois",
+  usageDailyHint: "30 derniers jours",
+  usageWeeklyHint: "26 dernières semaines",
+  usageMonthlyHint: "12 derniers mois",
+  total: "Total",
+  averagePerDay: "Par jour",
+  averagePerWeek: "Par semaine",
+  averagePerMonth: "Par mois",
+  peak: "Pic",
+  errors: "Erreurs",
+  vsPrevious: "par rapport à la période précédente",
+  weekOf: "Semaine du {date}",
+  soFar: "en cours",
+  noRequestsYet: "Aucune requête sur cette période pour l'instant.",
+  topKeys: "Clés d'API les plus utilisées",
+  topKeysHint: "30 derniers jours",
+  withoutKey: "Sans clé",
+  deletedKey: "Clé supprimée",
+  share: "Part",
+  slowest: "Plus lent",
   responseTimes: "Temps de réponse",
   responseTimesHint: "Les 1 000 dernières requêtes par point d'accès, depuis le démarrage du serveur.",
   endpoint: "Point d'accès",
@@ -687,6 +747,14 @@ export function makeFormats(lang: Lang) {
   const number = new Intl.NumberFormat(locale);
   const compact = new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 });
   const oneDecimal = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+  // Usage periods are UTC dates (as the server counts them), shown as such.
+  const dayMonth = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: "UTC" });
+  const monthYear = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" });
+  const shortMonth = new Intl.DateTimeFormat(locale, { month: "short", timeZone: "UTC" });
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
+  const signedPercent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0, signDisplay: "exceptZero" });
+  const time = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", second: "2-digit" });
   const units = lang === "fr" ? ["o", "Ko", "Mo", "Go", "To"] : ["B", "KB", "MB", "GB", "TB"];
 
   return {
@@ -695,6 +763,20 @@ export function makeFormats(lang: Lang) {
     /** "1.2M", "4.1 k". */
     compact: (n: number) => compact.format(n),
     mediumDate: (t: string | Date) => mediumDate.format(new Date(t)),
+    /** A UTC day: "23 Nov". */
+    dayMonth: (day: string) => dayMonth.format(new Date(day)),
+    /** A UTC day with its weekday: "Mon, 23 Nov 2026". */
+    weekday: (day: string) => weekday.format(new Date(day)),
+    /** A UTC month: "November 2026". */
+    monthYear: (day: string) => monthYear.format(new Date(day)),
+    /** A UTC month: "Nov". */
+    shortMonth: (day: string) => shortMonth.format(new Date(day)),
+    /** "4.2%". */
+    percent: (ratio: number) => percent.format(ratio),
+    /** "+12%", "−3%", "0%". */
+    signedPercent: (ratio: number) => signedPercent.format(ratio),
+    /** A clock time: "14:05:12". */
+    time: (t: Date) => time.format(t),
     /** "12 KB", "3.4 GB". */
     bytes(n: number): string {
       let i = 0;

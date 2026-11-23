@@ -1,11 +1,12 @@
 // The top bar, laid out like Calendar's and Notes': title on the left; the page's action, account and
 // the side panel toggle on the right.
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useApp } from "../lib/app";
+import { refreshLive, useFetching } from "../lib/hooks";
 import { useSettings } from "../lib/settings";
 import { Dropdown as Floating } from "./pickers";
-import { PanelLeft, PanelRight } from "./icons";
+import { PanelLeft, PanelRight, RefreshCw } from "./icons";
 
 export function Toolbar({ title, loading, actions }: { title: ReactNode; loading?: boolean; actions?: ReactNode }) {
   const { t } = useSettings();
@@ -33,6 +34,37 @@ export function Toolbar({ title, loading, actions }: { title: ReactNode; loading
         <PanelRight />
       </button>
     </header>
+  );
+}
+
+/** Refetches the page's live data now; spins while anything is loading (a turn at least, when clicked). */
+export function RefreshButton() {
+  const { t, f } = useSettings();
+  const fetching = useFetching();
+  const [clicked, setClicked] = useState(false);
+  const [updated, setUpdated] = useState(() => new Date());
+  useEffect(() => {
+    if (!fetching) setUpdated(new Date());
+  }, [fetching]);
+  useEffect(() => {
+    if (!clicked) return;
+    const timer = window.setTimeout(() => setClicked(false), 700);
+    return () => window.clearTimeout(timer);
+  }, [clicked]);
+  const busy = fetching || clicked;
+  return (
+    <button
+      className={`icon-button refresh-button${busy ? " busy" : ""}`}
+      title={`${t("refresh")} (R) · ${t("updatedAt", { time: f.time(updated) })}`}
+      aria-label={t("refresh")}
+      aria-busy={busy}
+      onClick={() => {
+        setClicked(true);
+        refreshLive();
+      }}
+    >
+      <RefreshCw size={16} />
+    </button>
   );
 }
 

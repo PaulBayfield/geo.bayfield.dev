@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, isAdmin, type Job, type Me, type ServerInfo } from "./lib/api";
 import { AppContext, type AppContextValue, type SettingsPage } from "./lib/app";
-import { MOBILE_QUERY, invalidate, useApi, useMediaQuery } from "./lib/hooks";
+import { MOBILE_QUERY, invalidate, refreshLive, useApi, useMediaQuery } from "./lib/hooks";
 import { PAGES, useRouter } from "./lib/router";
 import { SettingsProvider, useSettings } from "./lib/settings";
 import { usePrefsSync } from "./lib/prefs";
@@ -10,7 +10,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SignIn } from "./components/SignIn";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { SearchDialog } from "./components/SearchDialog";
-import { Toolbar } from "./components/Toolbar";
+import { RefreshButton, Toolbar } from "./components/Toolbar";
 import { ActivityPanel } from "./components/ActivityPanel";
 import { OverviewPage } from "./components/OverviewPage";
 import { RegionsPage } from "./components/RegionsPage";
@@ -162,6 +162,7 @@ function Shell({ me, setMe, router, onSignedOut }: { me: Me; setMe: (me: Me) => 
       if (k === "\\") toggleSidebar();
       else if (k === "/") setSearchOpen(true);
       else if (k === ".") togglePanel();
+      else if (k === "r" && r.name === "overview") refreshLive();
       else if (/^[1-5]$/.test(k)) router.navigate({ name: PAGES[Number(k) - 1] });
       else if (k === "n" && admin) {
         router.navigate({ name: "keys" });
@@ -180,6 +181,8 @@ function Shell({ me, setMe, router, onSignedOut }: { me: Me; setMe: (me: Me) => 
         <Plus size={14} />
         <span className="hide-mobile">{t("newKey")}</span>
       </button>
+    ) : r.name === "overview" ? (
+      <RefreshButton />
     ) : null;
 
   return (

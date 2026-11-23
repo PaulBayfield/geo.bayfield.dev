@@ -10,6 +10,7 @@ const SHORTCUTS: [keys: string[], label: StringKey][] = [
   [["4"], "apiKeys"],
   [["5"], "docs"],
   [["N"], "scNewKey"],
+  [["R"], "refresh"],
   [["Ctrl", "B"], "scSidebar"],
   [["."], "scPanel"],
   [["Ctrl", ","], "settings"],

@@ -2,6 +2,7 @@
 // the scheduler (Settings → Data → update every N days). Progress is written to the jobs table every
 // couple of seconds and kept in memory for the dashboard's live view.
 
+import { clearCache } from "../cache.ts";
 import { sql } from "../db.ts";
 import { loadCountries } from "../geocode.ts";
 import { HttpError } from "../http.ts";
@@ -61,6 +62,7 @@ export async function remove(regionId: string) {
   if (busy) throw new HttpError(409, "This region is being imported: cancel the import first");
   await sql`UPDATE jobs SET status = 'cancelled', finished_at = now() WHERE region = ${regionId} AND status = 'queued'`;
   await removeRegion(regionId);
+  clearCache();
 }
 
 let draining = false;
@@ -103,6 +105,7 @@ async function run(job: Job) {
     });
     await sql`UPDATE jobs SET status = 'done', progress = ${sql.json(result as never)}, finished_at = now() WHERE id = ${job.id}`;
     await loadCountries();
+    clearCache();
     console.log(`Imported ${job.name}: ${result.features} features, ${result.addresses} addresses`);
   } catch (e) {
     const cancelled = abort.signal.aborted;

@@ -17,6 +17,7 @@ import { RegionsPage } from "./components/RegionsPage";
 import { PlaygroundPage } from "./components/PlaygroundPage";
 import { KeysPage } from "./components/KeysPage";
 import { DocsPage } from "./components/DocsPage";
+import { PlacesPage } from "./components/PlacesPage";
 import { Plus } from "./components/icons";
 
 export default function App() {
@@ -64,6 +65,7 @@ function Shell({ me, setMe, router, onSignedOut }: { me: Me; setMe: (me: Me) => 
   const [mobilePanel, setMobilePanel] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [creatingKey, setCreatingKey] = useState(false);
+  const [creatingPlace, setCreatingPlace] = useState(false);
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(() => {
     const p = new URLSearchParams(location.search).get("settings");
     return p ? (p as SettingsPage) : null;
@@ -163,7 +165,8 @@ function Shell({ me, setMe, router, onSignedOut }: { me: Me; setMe: (me: Me) => 
       else if (k === "/") setSearchOpen(true);
       else if (k === ".") togglePanel();
       else if (k === "r" && r.name === "overview") refreshLive();
-      else if (/^[1-5]$/.test(k)) router.navigate({ name: PAGES[Number(k) - 1] });
+      else if (/^[1-6]$/.test(k)) router.navigate({ name: PAGES[Number(k) - 1] });
+      else if (k === "n" && admin && r.name === "places") setCreatingPlace(true);
       else if (k === "n" && admin) {
         router.navigate({ name: "keys" });
         setCreatingKey(true);
@@ -174,12 +177,17 @@ function Shell({ me, setMe, router, onSignedOut }: { me: Me; setMe: (me: Me) => 
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const titles = { overview: t("overview"), regions: t("regions"), playground: t("playground"), keys: t("apiKeys"), docs: t("docs") };
+  const titles = { overview: t("overview"), regions: t("regions"), playground: t("playground"), places: t("customPlaces"), keys: t("apiKeys"), docs: t("docs") };
   const actions =
     r.name === "keys" && admin ? (
       <button className="text-button" title={`${t("newKey")} (N)`} onClick={() => setCreatingKey(true)}>
         <Plus size={14} />
         <span className="hide-mobile">{t("newKey")}</span>
+      </button>
+    ) : r.name === "places" && admin ? (
+      <button className="text-button" title={`${t("newPlace")} (N)`} onClick={() => setCreatingPlace(true)}>
+        <Plus size={14} />
+        <span className="hide-mobile">{t("newPlace")}</span>
       </button>
     ) : r.name === "overview" ? (
       <RefreshButton />
@@ -200,6 +208,7 @@ function Shell({ me, setMe, router, onSignedOut }: { me: Me; setMe: (me: Me) => 
             {r.name === "overview" && <OverviewPage />}
             {r.name === "regions" && <RegionsPage />}
             {r.name === "playground" && <PlaygroundPage />}
+            {r.name === "places" && <PlacesPage creating={creatingPlace} setCreating={setCreatingPlace} />}
             {r.name === "keys" && <KeysPage creating={creatingKey} setCreating={setCreatingKey} />}
             {r.name === "docs" && <DocsPage />}
           </div>

@@ -1,8 +1,8 @@
-// Address-bar routing: / overview, /regions, /playground, /keys, /docs.
+// Address-bar routing: / overview, /regions, /playground, /places, /keys, /docs.
 
 import { useCallback, useEffect, useState } from "react";
 
-export const PAGES = ["overview", "regions", "playground", "keys", "docs"] as const;
+export const PAGES = ["overview", "regions", "playground", "places", "keys", "docs"] as const;
 export type Page = (typeof PAGES)[number];
 export type Route = { name: Page };
 

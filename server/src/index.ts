@@ -17,11 +17,13 @@ import { HttpError } from "./http.ts";
 import { flushUsage } from "./access.ts";
 import { loadCountries } from "./geocode.ts";
 import { loadSettings } from "./settings.ts";
+import { loadRestrictions } from "./places.ts";
 import { resumeJobs, startScheduler } from "./import/jobs.ts";
 
 await migrate();
 await loadSettings();
 await loadCountries();
+await loadRestrictions();
 
 const indexPath = resolve(DIST_DIR, "index.html");
 const attr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");

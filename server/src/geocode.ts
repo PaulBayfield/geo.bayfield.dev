@@ -7,8 +7,15 @@
 //
 // Benchmarks and the reasoning behind this: docs/spike.md.
 
-import { sql, TOP_IMPORTANCE } from "./db.ts";
-import { settings } from "./settings.ts";
+import { CUSTOM_REGION, sql, TOP_IMPORTANCE } from "./db.ts";
+import { normWord, settings, type Format, type Settings } from "./settings.ts";
+import { allowedKeys } from "./places.ts";
+
+/**
+ * Who's asking, for private custom places: an API key's id, null without a key, or "all" (the
+ * dashboard's playground, which sees everything).
+ */
+export type Viewer = string | null | "all";
 
 /** A piece of SQL to nest in a query (postgres.js types fragments by their rows, which don't matter here). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,6 +62,8 @@ export interface Filters {
   bbox?: [number, number, number, number];
   /** OSM tags: "amenity", "amenity:restaurant", "!highway". */
   tags?: string[];
+  /** Who's asking (private places); without it, only what any caller may see. */
+  viewer?: Viewer;
 }
 
 /** Lowercase, accents off, split into words (letters and digits only, so they're safe in a tsquery). */
@@ -69,6 +78,49 @@ export function words(q: string): string[] {
 }
 
 const isHouseNumber = (w: string) => /^\d{1,4}[a-z]?$/.test(w);
+
+// ---------- Synonyms and the blocklist (settings, compiled once per change) ----------
+
+let synonymsFrom: string[][] | null = null;
+let synonymMap = new Map<string, string[]>();
+
+/** The other words that mean the same as `w` (Settings → Synonyms). */
+function synonymsOf(w: string): string[] {
+  const groups = settings().text.synonyms;
+  if (groups !== synonymsFrom) {
+    synonymsFrom = groups;
+    synonymMap = new Map();
+    for (const g of groups) for (const word of g) synonymMap.set(word, [...new Set([...(synonymMap.get(word) ?? []), ...g.filter((x) => x !== word)])]);
+  }
+  return synonymMap.get(w) ?? [];
+}
+
+let blockFrom: Settings["blocklist"] | null = null;
+let blockIds = new Set<string>();
+let blockNames: RegExp[] = [];
+
+/**
+ * False for a result the caller may not have: on the blocklist (its OSM id, or a name matching one of
+ * the patterns), or a private custom place their key isn't allowed to see.
+ */
+function allowed(h: Hit, viewer: Viewer = null): boolean {
+  if (h.osmType === "X" && viewer !== "all") {
+    const keys = allowedKeys(h.osmId);
+    if (keys && (viewer === null || !keys.has(viewer))) return false;
+  }
+  const b = settings().blocklist;
+  if (b !== blockFrom) {
+    blockFrom = b;
+    blockIds = new Set(b.ids);
+    blockNames = b.names.map((p) => new RegExp(`^${normWord(p).split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, "u"));
+  }
+  if (blockIds.size && blockIds.has(`${h.osmType}${h.osmId}`)) return false;
+  if (blockNames.length && h.name) {
+    const name = normWord(h.name);
+    if (blockNames.some((re) => re.test(name))) return false;
+  }
+  return true;
+}
 
 const FEATURE_FIELDS = sql`
   id::text, 'feature' AS source, layer, name, names, housenumber, street, postcode, district, city, county, state, address_i18n,
@@ -151,7 +203,13 @@ export async function find(q: string, f: Filters, prefix: boolean): Promise<Hit[
   }
   // With a house number, look at more streets: the number is then searched on them.
   const limit = numbers.length ? Math.max(wanted, 10) : wanted;
-  const term = (w: string, i: number, weight = "") => (i === text.length - 1 && typingLast ? `${w}:*${weight}` : weight ? `${w}:${weight}` : w);
+  // A word, or any of its synonyms ("st" → "st | saint"); the one being typed matches as a prefix.
+  const one = (w: string, prefixed: boolean, weight: string) => (prefixed ? `${w}:*${weight}` : weight ? `${w}:${weight}` : w);
+  const term = (w: string, i: number, weight = "") => {
+    const typing = i === text.length - 1 && typingLast;
+    const alts = synonymsOf(w);
+    return alts.length ? `(${[one(w, typing, weight), ...alts.map((a) => one(a, false, weight))].join(" | ")})` : one(w, typing, weight);
+  };
   const tsquery = text.map((w, i) => term(w, i)).join(" & ");
   const inName = text.map((w, i) => term(w, i, "A")).join(" & ");
   const phrase = text.join(" ");
@@ -249,7 +307,7 @@ export async function find(q: string, f: Filters, prefix: boolean): Promise<Hit[
       hits = dedupe([...hits, ...[...top, ...tail].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))]);
     } else hits = dedupe([...hits, ...top]);
   }
-  return hits.slice(0, wanted);
+  return hits.filter((h) => allowed(h, f.viewer)).slice(0, wanted);
 }
 
 export interface ReverseOptions {
@@ -257,6 +315,7 @@ export interface ReverseOptions {
   radius?: number;
   limit?: number;
   layers?: string[];
+  viewer?: Viewer;
 }
 
 /**
@@ -281,7 +340,7 @@ export async function reverse(lat: number, lon: number, o: ReverseOptions = {}):
       ? sql<Hit[]>`
       SELECT * FROM (
         SELECT ${FEATURE_FIELDS}, ST_Distance(centroid::geography, ${pt}::geography) AS distance
-        FROM features WHERE layer = 'house' AND housenumber IS NOT NULL ORDER BY centroid <-> ${pt} LIMIT 5
+        FROM features WHERE layer = 'house' AND (housenumber IS NOT NULL OR region = ${CUSTOM_REGION}) ORDER BY centroid <-> ${pt} LIMIT 5
       ) x WHERE distance <= ${radius} ORDER BY distance LIMIT 1`
       : Promise.resolve([] as Hit[]),
     want("street")
@@ -299,9 +358,10 @@ export async function reverse(lat: number, lon: number, o: ReverseOptions = {}):
       ORDER BY array_position(ARRAY['locality', 'district', 'city', 'county', 'state', 'country'], layer), ST_Area(geom)`
       : Promise.resolve([] as Hit[]),
   ]);
-  // The closer of an address and a named place with a number (a shop at that address).
-  const house = [...houses, ...pois].sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0)).slice(0, 1);
-  return [...house, ...streets, ...areas].slice(0, o.limit ?? 10);
+  // The closer of an address and a named place with a number (a shop at that address), or a custom place.
+  const ok = (h: Hit) => allowed(h, o.viewer);
+  const house = [...houses, ...pois].filter(ok).sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0)).slice(0, 1);
+  return [...house, ...streets.filter(ok), ...areas.filter(ok)].slice(0, o.limit ?? 10);
 }
 
 // ---------- Output ----------
@@ -373,6 +433,28 @@ export function toResults(hits: Hit[], lang: string) {
       region: h.region,
     };
   });
+}
+
+/**
+ * /v1/… in the format asked for (?format=, else the default in Settings → Results):
+ * GeoPol's own, GeoJSON with GeoPol's fields as properties, Photon's GeoJSON, or a compact list.
+ */
+export function formatted(hits: Hit[], lang: string, format: Format) {
+  if (format === "photon") return toPhoton(hits, lang);
+  const results = toResults(hits, lang);
+  if (format === "geojson")
+    return {
+      type: "FeatureCollection",
+      features: results.map(({ lat, lon, extent, ...properties }) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [lon, lat] },
+        // GeoJSON's bbox is west, south, east, north (extent: west, north, east, south).
+        ...(extent ? { bbox: [extent[0], extent[3], extent[2], extent[1]] } : {}),
+        properties,
+      })),
+    };
+  if (format === "compact") return { results: results.map((r) => ({ id: r.id, layer: r.layer, label: r.label, lat: r.lat, lon: r.lon, ...(r.distance !== undefined ? { distance: r.distance } : {}) })) };
+  return { results };
 }
 
 /** Photon's GeoJSON (/api, /reverse): what gps, llip, concerts and maps already read. */

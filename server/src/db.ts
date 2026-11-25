@@ -22,6 +22,9 @@ export type Sql = typeof sql;
 export const LAYERS = ["house", "street", "locality", "district", "city", "county", "state", "country", "other"] as const;
 export type Layer = (typeof LAYERS)[number];
 
+/** The region custom places belong to (their own partition, never imported or removed with a region). */
+export const CUSTOM_REGION = "custom";
+
 /** Places at least this important (cities, districts, landmarks: ~1% of features) get their own small search index. */
 export const TOP_IMPORTANCE = 0.15;
 
@@ -232,6 +235,12 @@ const MIGRATIONS: string[] = [
   `,
   /* 2: typo search in two tiers too: the important places' names in a small trigram index of their own */ `
   CREATE INDEX features_name_trgm_top ON features USING gin (geo_norm(name) gin_trgm_ops) WHERE importance >= ${TOP_IMPORTANCE};
+  `,
+  /* 3: custom places, added in the dashboard: a partition of their own (region "custom", OSM type "X"),
+        so search, typo search and reverse geocoding find them like any imported place, and region
+        imports and removals never touch them. The partition adopts the parent's indexes. */ `
+  CREATE SEQUENCE custom_places_seq;
+  CREATE TABLE features_custom PARTITION OF features FOR VALUES IN ('${CUSTOM_REGION}');
   `,
 ];
 

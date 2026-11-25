@@ -15,6 +15,8 @@ import { find, reverse, toResults } from "./geocode.ts";
 import { catalog } from "./import/catalog.ts";
 import { cancel, enqueue, liveProgress, remove } from "./import/jobs.ts";
 import { regionSizes } from "./import/run.ts";
+import { cacheStats, resetCache } from "./cache.ts";
+import { places } from "./places.ts";
 
 export const api = new Hono<AppEnv>();
 
@@ -196,6 +198,17 @@ api.get("/settings", (c) => c.json(settings()));
 
 api.patch("/settings/:section", admin, async (c) => c.json(await updateSettings(c.req.param("section") ?? "", await body(c))));
 
+// ---------- Custom places, the response cache ----------
+
+api.route("/places", places);
+
+api.get("/cache", (c) => c.json(cacheStats()));
+
+api.post("/cache/clear", admin, (c) => {
+  resetCache();
+  return c.json(cacheStats());
+});
+
 // ---------- Playground: the API without keys or limits, for whoever is signed in ----------
 
 api.get("/try/:mode", async (c) => {
@@ -208,14 +221,14 @@ api.get("/try/:mode", async (c) => {
     const lat = Number(c.req.query("lat"));
     const lon = Number(c.req.query("lon"));
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw bad("lat and lon are required");
-    hits = await reverse(lat, lon, { radius: c.req.query("radius") ? Number(c.req.query("radius")) : undefined });
+    hits = await reverse(lat, lon, { radius: c.req.query("radius") ? Number(c.req.query("radius")) : undefined, viewer: "all" });
   } else if (mode === "autocomplete" || mode === "search") {
     const q = c.req.query("q")?.trim();
     if (!q) return c.json({ results: [], ms: 0 });
     const lat = Number(c.req.query("lat"));
     const lon = Number(c.req.query("lon"));
     const near = c.req.query("lat") && Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : undefined;
-    hits = await find(q, { near, limit: c.req.query("limit") ? Number(c.req.query("limit")) : undefined }, mode === "autocomplete");
+    hits = await find(q, { near, limit: c.req.query("limit") ? Number(c.req.query("limit")) : undefined, viewer: "all" }, mode === "autocomplete");
   } else throw new HttpError(404, "Not found");
   return c.json({ results: toResults(hits, lang), ms: Math.round((performance.now() - started) * 10) / 10 });
 });

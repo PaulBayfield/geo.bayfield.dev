@@ -3,16 +3,20 @@
 // key settings are.
 
 import { useEffect, useRef, useState } from "react";
-import { api, query, type GeoResult } from "../lib/api";
+import { api, query, type GeoResult, type ServiceSettings } from "../lib/api";
+import { useApp } from "../lib/app";
+import { invalidate } from "../lib/hooks";
 import { useSettings } from "../lib/settings";
 import { MapCanvas, maplibregl, type MapInstance } from "./MapCanvas";
-import { CopyButton, Flags } from "./common";
-import { Code, Crosshair, MapPin, Search } from "./icons";
+import { CopyButton, Flags, useToast } from "./common";
+import { Code, Crosshair, EyeOff, MapPin, Search } from "./icons";
 
 type Mode = "autocomplete" | "search" | "reverse";
 
 export function PlaygroundPage() {
   const { t, f, settings, update } = useSettings();
+  const { admin } = useApp();
+  const toast = useToast();
   const mode = settings.playgroundMode;
   const [q, setQ] = useState("");
   const [results, setResults] = useState<GeoResult[]>([]);
@@ -93,6 +97,20 @@ export function PlaygroundPage() {
 
   const current = results[selected];
 
+  /** Adds the result to the blocklist (Settings → Blocklist): no endpoint returns it any more. */
+  const hide = async (r: GeoResult) => {
+    try {
+      const s = await api<ServiceSettings>("/app/settings");
+      await api("/app/settings/blocklist", { method: "PATCH", body: { ids: [...s.blocklist.ids, r.id] } });
+      invalidate("/app/settings");
+      setResults((list) => list.filter((x) => x.id !== r.id));
+      setSelected(0);
+      toast(t("resultHidden", { id: r.id }));
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  };
+
   return (
     <div className="playground">
       <MapCanvas
@@ -170,10 +188,18 @@ export function PlaygroundPage() {
               <Code size={13} />
               {raw ? t("hideJson") : t("showJson")}
             </button>
-            <a className="text-button small" href={`https://www.openstreetmap.org/${{ N: "node", W: "way", R: "relation" }[current.osm.type] ?? "node"}/${current.osm.id}`} target="_blank" rel="noreferrer">
-              <MapPin size={13} />
-              OSM
-            </a>
+            {current.osm.type !== "X" && (
+              <a className="text-button small" href={`https://www.openstreetmap.org/${{ N: "node", W: "way", R: "relation" }[current.osm.type] ?? "node"}/${current.osm.id}`} target="_blank" rel="noreferrer">
+                <MapPin size={13} />
+                OSM
+              </a>
+            )}
+            {admin && (
+              <button className="text-button small" title={t("hideResultHint")} onClick={() => void hide(current)}>
+                <EyeOff size={13} />
+                {t("hideResult")}
+              </button>
+            )}
             {raw && (
               <div className="json-box">
                 <CopyButton text={JSON.stringify(current, null, 2)} />

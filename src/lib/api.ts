@@ -168,11 +168,53 @@ export interface ApiKey {
   key?: string;
 }
 
+/** The shapes /v1/… can answer in. */
+export const FORMATS = ["geopol", "geojson", "photon", "compact"] as const;
+export type Format = (typeof FORMATS)[number];
+
 export interface ServiceSettings {
   access: { requireKey: boolean; requireKeyFor: Endpoint[]; ipPerMinute: number; keyPerMinute: number; corsOrigins: string[] };
-  results: { defaultLimit: number; maxLimit: number; defaultLanguage: string; layers: string[]; reverseRadius: number };
+  results: { defaultLimit: number; maxLimit: number; defaultLanguage: string; layers: string[]; reverseRadius: number; format: Format };
   ranking: { importance: number; prefix: number; nameMatch: number; near: number; nearKm: number };
   data: { languages: string[]; houseNumbers: boolean; dumpBaseUrl: string; dumpVersion: string; updateEveryDays: number };
+  /** Groups of words that mean the same in a query. */
+  text: { synonyms: string[][] };
+  /** Results never returned: OSM ids ("N123", "X4" for a custom place) and name patterns ("*test*"). */
+  blocklist: { ids: string[]; names: string[] };
+  cache: { enabled: boolean; ttlSeconds: number; maxEntries: number };
+}
+
+export interface CacheStats {
+  entries: number;
+  hits: number;
+  misses: number;
+  hitRate: number | null;
+  since: string;
+}
+
+/** A place added in the dashboard (OSM type "X"). */
+export interface CustomPlace {
+  id: string;
+  name: string;
+  altNames: string[];
+  layer: string;
+  osmKey: string;
+  osmValue: string;
+  housenumber: string | null;
+  street: string | null;
+  postcode: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
+  countryCode: string | null;
+  importance: number;
+  lat: number;
+  lon: number;
+  note: string;
+  /** Private: only these API keys (ids) find it. Empty: everyone. */
+  keys: string[];
+  updatedBy: string | null;
+  updatedAt: string | null;
 }
 
 export type UsageGrain = "daily" | "weekly" | "monthly";

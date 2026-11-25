@@ -2,7 +2,7 @@
 // them; everyone else sees them. Each change is saved at once and applies to the next request.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ENDPOINTS, LAYERS, api, type ServiceSettings } from "../../lib/api";
+import { ENDPOINTS, FORMATS, LAYERS, api, type CacheStats, type Format, type ServiceSettings } from "../../lib/api";
 import { useApp } from "../../lib/app";
 import { invalidate, useApi } from "../../lib/hooks";
 import { useSettings } from "../../lib/settings";
@@ -149,6 +149,15 @@ export function ResultsPage() {
             <Row label={t("reverseRadius")} hint={t("reverseRadiusHint")}>
               <NumberField value={v.reverseRadius} min={10} max={100000} disabled={readOnly} suffix="m" onSave={(reverseRadius) => void save({ reverseRadius })} />
             </Row>
+            <Row label={t("defaultFormat")} hint={t("defaultFormatHint")}>
+              <select className="text-field" value={v.format} disabled={readOnly} onChange={(e) => void save({ format: e.target.value as Format })}>
+                {FORMATS.map((fmt) => (
+                  <option key={fmt} value={fmt}>
+                    {t(`format_${fmt}`)}
+                  </option>
+                ))}
+              </select>
+            </Row>
           </section>
           <section className="settings-rows">
             <Row label={t("enabledLayers")} hint={t("enabledLayersHint")} stack>
@@ -225,6 +234,143 @@ export function DataPage() {
           </Row>
           <Row label={t("dumpVersion")} hint={t("dumpVersionHint")}>
             <ListField value={[v.dumpVersion]} disabled={readOnly} onSave={(d) => d[0] && void save({ dumpVersion: d[0] })} />
+          </Row>
+        </section>
+      )}
+    </>
+  );
+}
+
+/** Several lines of text, saved when it loses focus. */
+function LinesField({ value, onSave, placeholder, disabled, rows = 6 }: { value: string; onSave: (v: string) => void; placeholder?: string; disabled?: boolean; rows?: number }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  return (
+    <textarea
+      className="text-field area wide mono"
+      rows={rows}
+      value={text}
+      placeholder={placeholder}
+      disabled={disabled}
+      spellCheck={false}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => text !== value && onSave(text)}
+    />
+  );
+}
+
+const nonEmptyLines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+
+export function SynonymsPage() {
+  const { t } = useSettings();
+  const { value: v, save, readOnly } = useService("text");
+  return (
+    <>
+      <PageHeader title={t("synonyms")} hint={t("synonymsHint")} />
+      {v && (
+        <section className="settings-rows">
+          <Row label={t("synonymGroups")} hint={t("synonymGroupsHint")} stack>
+            <LinesField
+              value={v.synonyms.map((g) => g.join(", ")).join("\n")}
+              disabled={readOnly}
+              rows={10}
+              placeholder={"st, saint, sankt\nav, avenue\nbd, boulevard\nmt, mont, mount"}
+              onSave={(text) => void save({ synonyms: nonEmptyLines(text).map((l) => l.split(/[,\s]+/).filter(Boolean)) })}
+            />
+          </Row>
+        </section>
+      )}
+    </>
+  );
+}
+
+export function BlocklistPage() {
+  const { t } = useSettings();
+  const { value: v, save, readOnly } = useService("blocklist");
+  return (
+    <>
+      <PageHeader title={t("blocklist")} hint={t("blocklistHint")} />
+      {v && (
+        <section className="settings-rows">
+          <Row label={t("blockedIds")} hint={t("blockedIdsHint")} stack>
+            <LinesField value={v.ids.join("\n")} disabled={readOnly} rows={6} placeholder={"N240109189\nW4536714\nX12"} onSave={(text) => void save({ ids: nonEmptyLines(text).flatMap((l) => l.split(/[,\s]+/)).filter(Boolean) })} />
+          </Row>
+          <Row label={t("blockedNames")} hint={t("blockedNamesHint")} stack>
+            <LinesField value={v.names.join("\n")} disabled={readOnly} rows={6} placeholder={"*test*\nparking"} onSave={(text) => void save({ names: nonEmptyLines(text) })} />
+          </Row>
+        </section>
+      )}
+    </>
+  );
+}
+
+export function CachePage() {
+  const { t, f } = useSettings();
+  const toast = useToast();
+  const { admin } = useApp();
+  const { value: v, save, readOnly } = useService("cache");
+  const stats = useApi<CacheStats>("/app/cache");
+  // Live numbers while the page is open.
+  useEffect(() => {
+    const timer = window.setInterval(() => stats.reload(), 5000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const s = stats.data;
+  return (
+    <>
+      <PageHeader title={t("cache")} hint={t("cacheHint")} />
+      {v && (
+        <section className="settings-rows">
+          <Row label={t("cacheEnabled")} hint={t("cacheEnabledHint")}>
+            <Switch checked={v.enabled} disabled={readOnly} onChange={(enabled) => void save({ enabled })} label={t("cacheEnabled")} />
+          </Row>
+          <Row label={t("cacheTtl")} hint={t("cacheTtlHint")} disabled={!v.enabled}>
+            <NumberField value={v.ttlSeconds} min={1} max={86400} disabled={readOnly || !v.enabled} suffix="s" onSave={(ttlSeconds) => void save({ ttlSeconds })} />
+          </Row>
+          <Row label={t("cacheMax")} hint={t("cacheMaxHint")} disabled={!v.enabled}>
+            <NumberField value={v.maxEntries} min={100} max={1000000} disabled={readOnly || !v.enabled} onSave={(maxEntries) => void save({ maxEntries })} />
+          </Row>
+        </section>
+      )}
+      {s && (
+        <section className="settings-rows">
+          <h3>{t("cacheStats")}</h3>
+          <div className="cache-stats">
+            <div>
+              <span className="cache-stat-value tabular">{f.number(s.entries)}</span>
+              <span className="small muted">{t("cacheEntries")}</span>
+            </div>
+            <div>
+              <span className="cache-stat-value tabular">{s.hitRate === null ? "—" : `${Math.round(s.hitRate * 100)} %`}</span>
+              <span className="small muted">{t("cacheHitRate")}</span>
+            </div>
+            <div>
+              <span className="cache-stat-value tabular">{f.number(s.hits)}</span>
+              <span className="small muted">{t("cacheHits")}</span>
+            </div>
+            <div>
+              <span className="cache-stat-value tabular">{f.number(s.misses)}</span>
+              <span className="small muted">{t("cacheMisses")}</span>
+            </div>
+          </div>
+          <Row label={t("cacheSince", { when: f.relative(s.since, t) })} hint={t("cacheClearHint")}>
+            <button
+              className="text-button"
+              disabled={!admin}
+              onClick={async () => {
+                try {
+                  await api("/app/cache/clear", { method: "POST" });
+                  invalidate("/app/cache");
+                  stats.reload();
+                  toast(t("cacheCleared"));
+                } catch (e) {
+                  toast((e as Error).message, "error");
+                }
+              }}
+            >
+              {t("cacheClear")}
+            </button>
           </Row>
         </section>
       )}

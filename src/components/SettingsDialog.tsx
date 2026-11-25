@@ -2,9 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useApp, type SettingsPage } from "../lib/app";
 import { useSettings } from "../lib/settings";
 import type { StringKey } from "../lib/i18n";
-import { BarChart, Database, Info, Key, Keyboard, List, Shield, Sliders, UserIcon, Users, X } from "./icons";
+import { BarChart, Database, EyeOff, Info, Clock, Key, Keyboard, List, Shield, Sliders, Type, UserIcon, Users, X } from "./icons";
 import { PreferencesPage, ProfilePage, SecurityPage } from "./settings/AccountPages";
-import { AccessPage, DataPage, RankingPage, ResultsPage } from "./settings/ServicePages";
+import { AccessPage, BlocklistPage, CachePage, DataPage, RankingPage, ResultsPage, SynonymsPage } from "./settings/ServicePages";
 import { AboutPage, UsersPage } from "./settings/AdminPages";
 import { PageHeader } from "./settings/common";
 import { ShortcutList } from "./Shortcuts";
@@ -38,6 +38,9 @@ export function SettingsDialog({ page: initialPage, onClose }: { page: SettingsP
         { id: "access", label: "access", icon: <Key />, page: () => <AccessPage /> },
         { id: "results", label: "results", icon: <List />, page: () => <ResultsPage /> },
         { id: "ranking", label: "ranking", icon: <BarChart />, page: () => <RankingPage /> },
+        { id: "synonyms", label: "synonyms", icon: <Type />, page: () => <SynonymsPage /> },
+        { id: "blocklist", label: "blocklist", icon: <EyeOff />, page: () => <BlocklistPage /> },
+        { id: "cache", label: "cache", icon: <Clock />, page: () => <CachePage /> },
         { id: "data", label: "data", icon: <Database />, page: () => <DataPage /> },
       ],
     },

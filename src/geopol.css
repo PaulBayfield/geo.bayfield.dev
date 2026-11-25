@@ -1129,3 +1129,105 @@ code,
 .sidebar-row .flags {
   margin-left: -2px;
 }
+
+/* ----- Custom places ----- */
+
+.places-map {
+  height: 300px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.places-filter {
+  align-self: flex-start;
+}
+.place-marker {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+.place-marker.editing {
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
+  cursor: grab;
+}
+.place-picker {
+  position: relative;
+  height: 220px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.place-picker-hint {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.dialog-form .field.narrow {
+  flex: 0 0 96px;
+}
+.data-table + .table-empty,
+.table-empty {
+  padding: 20px;
+  text-align: center;
+}
+
+/* ----- Cache stats ----- */
+
+.cache-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.cache-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+.cache-stat-value {
+  font-size: 18px;
+  font-weight: 650;
+}
+@media (max-width: 760px) {
+  .cache-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ----- Private custom places ----- */
+
+.place-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 2px 22px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.places-page td .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}

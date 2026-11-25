@@ -4,7 +4,7 @@ import { createContext, useContext } from "react";
 import type { Job, Me, ServerInfo } from "./api";
 import type { Route } from "./router";
 
-export type SettingsPage = "profile" | "preferences" | "security" | "access" | "results" | "ranking" | "data" | "shortcuts" | "users" | "about";
+export type SettingsPage = "profile" | "preferences" | "security" | "access" | "results" | "ranking" | "synonyms" | "blocklist" | "cache" | "data" | "shortcuts" | "users" | "about";
 
 export interface AppContextValue {
   me: Me;

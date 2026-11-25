@@ -7,14 +7,18 @@
 //   GET /reverse          Photon's reverse (lat, lon, limit, radius in km, lang, layer)
 //   GET /v1/status        the regions served, and whether a key is required
 //
+// /v1/… answer in GeoPol's format, GeoJSON, Photon's GeoJSON or a compact list (?format=). Identical
+// requests within the cache's TTL get the same answer from memory (X-Cache: HIT or MISS).
+//
 // Every endpoint goes through access.ts first: API key (when required), scopes, rate limits, quotas.
 
 import { Hono, type Context } from "hono";
 import { authorize, corsOrigin, track, type Caller } from "./access.ts";
-import { find, limitOf, reverse, toPhoton, toResults, type Filters } from "./geocode.ts";
+import { cacheKey, cached, remember } from "./cache.ts";
+import { find, formatted, limitOf, reverse, toPhoton, type Filters } from "./geocode.ts";
 import { bad } from "./http.ts";
 import { sql } from "./db.ts";
-import { settings, type Endpoint } from "./settings.ts";
+import { FORMATS, settings, type Endpoint, type Format } from "./settings.ts";
 
 export const geo = new Hono();
 
@@ -56,8 +60,17 @@ const lang = (c: Context) => {
   return l && /^[a-z]{2,3}$/.test(l) ? l : settings().results.defaultLanguage;
 };
 
-function filters(c: Context, layerParam: string, tagParam: string): Filters {
+/** ?format=geopol|geojson|photon|compact, else the default set in Settings → Results. */
+function format(c: Context): Format {
+  const f = c.req.query("format")?.toLowerCase();
+  if (!f) return settings().results.format;
+  if (!(FORMATS as readonly string[]).includes(f)) throw bad(`format should be one of ${FORMATS.join(", ")}`);
+  return f as Format;
+}
+
+function filters(c: Context, layerParam: string, tagParam: string, caller: Caller): Filters {
   return {
+    viewer: caller.key?.id ?? null,
     limit: number(c, "limit", 1, 1000),
     near: point(c, false),
     layers: listParam(c, layerParam),
@@ -69,7 +82,7 @@ function filters(c: Context, layerParam: string, tagParam: string): Filters {
 
 // ---------- One handler around every endpoint: access, CORS, timing, counting ----------
 
-function endpoint(name: Endpoint, run: (c: Context) => Promise<unknown>) {
+function endpoint(name: Endpoint, run: (c: Context, caller: Caller) => Promise<unknown>) {
   return async (c: Context) => {
     const started = performance.now();
     const origin = corsOrigin(c);
@@ -80,9 +93,19 @@ function endpoint(name: Endpoint, run: (c: Context) => Promise<unknown>) {
     let caller: Caller | null = null;
     try {
       caller = await authorize(c, name);
-      const body = await run(c);
+      // The same request within the cache's TTL: the answer already computed (after the access checks).
+      const url = new URL(c.req.url);
+      // Per key too: a private custom place is only in some keys' answers.
+      const key = `${caller.key?.id ?? ""}|${cacheKey(url.pathname, url.searchParams)}`;
+      let body = cached(key);
+      const hit = body !== undefined;
+      if (!hit) {
+        body = await run(c, caller);
+        remember(key, body);
+      }
       const ms = performance.now() - started;
       track(caller, name, ms, false);
+      if (settings().cache.enabled) c.header("X-Cache", hit ? "HIT" : "MISS");
       c.header("Server-Timing", `geo;dur=${ms.toFixed(1)}`);
       c.header("Cache-Control", "no-store");
       return c.json(body as object);
@@ -115,26 +138,27 @@ const query = (c: Context) => {
 
 geo.get(
   "/v1/autocomplete",
-  endpoint("autocomplete", async (c) => {
-    const l = lang(c);
-    return { results: toResults(await find(query(c), filters(c, "layers", "tags"), true), l) };
+  endpoint("autocomplete", async (c, caller) => {
+    const [l, fmt] = [lang(c), format(c)];
+    return formatted(await find(query(c), filters(c, "layers", "tags", caller), true), l, fmt);
   }),
 );
 
 geo.get(
   "/v1/search",
-  endpoint("search", async (c) => {
-    const l = lang(c);
-    return { results: toResults(await find(query(c), filters(c, "layers", "tags"), false), l) };
+  endpoint("search", async (c, caller) => {
+    const [l, fmt] = [lang(c), format(c)];
+    return formatted(await find(query(c), filters(c, "layers", "tags", caller), false), l, fmt);
   }),
 );
 
 geo.get(
   "/v1/reverse",
-  endpoint("reverse", async (c) => {
+  endpoint("reverse", async (c, caller) => {
     const p = point(c, true)!;
-    const hits = await reverse(p.lat, p.lon, { radius: number(c, "radius", 1, 100_000), limit: limitOf(number(c, "limit", 1, 1000) ?? 10), layers: listParam(c, "layers") });
-    return { results: toResults(hits, lang(c)) };
+    const fmt = format(c);
+    const hits = await reverse(p.lat, p.lon, { radius: number(c, "radius", 1, 100_000), limit: limitOf(number(c, "limit", 1, 1000) ?? 10), layers: listParam(c, "layers"), viewer: caller.key?.id ?? null });
+    return formatted(hits, lang(c), fmt);
   }),
 );
 
@@ -142,16 +166,16 @@ geo.get(
 
 geo.get(
   "/api",
-  endpoint("photon", async (c) => toPhoton(await find(query(c), filters(c, "layer", "osm_tag"), true), lang(c))),
+  endpoint("photon", async (c, caller) => toPhoton(await find(query(c), filters(c, "layer", "osm_tag", caller), true), lang(c))),
 );
 
 geo.get(
   "/reverse",
-  endpoint("photon", async (c) => {
+  endpoint("photon", async (c, caller) => {
     const p = point(c, true)!;
     // Photon's radius is in kilometres.
     const km = number(c, "radius", 0.001, 100);
-    const hits = await reverse(p.lat, p.lon, { radius: km !== undefined ? km * 1000 : undefined, limit: limitOf(number(c, "limit", 1, 1000) ?? 1), layers: listParam(c, "layer") });
+    const hits = await reverse(p.lat, p.lon, { radius: km !== undefined ? km * 1000 : undefined, limit: limitOf(number(c, "limit", 1, 1000) ?? 1), layers: listParam(c, "layer"), viewer: caller.key?.id ?? null });
     return toPhoton(hits, lang(c));
   }),
 );

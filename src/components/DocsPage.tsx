@@ -23,6 +23,7 @@ export function DocsPage() {
     { name: "countries", hint: t("p_countries") },
     { name: "bbox", hint: t("p_bbox") },
     { name: "tags", hint: t("p_tags") },
+    { name: "format", hint: t("p_format") },
   ];
 
   return (
@@ -47,6 +48,7 @@ export function DocsPage() {
           { name: "limit", hint: t("p_limit") },
           { name: "lang", hint: t("p_lang") },
           { name: "layers", hint: t("p_layers") },
+          { name: "format", hint: t("p_format") },
         ]}
         example={`${base}/v1/reverse?lat=50.8467&lon=4.3525`}
       />
@@ -69,6 +71,31 @@ export function DocsPage() {
     "region": "europe-belgium"
   }]
 }`}</pre>
+      </section>
+
+      <section className="card">
+        <h2 className="section-title">{t("docsFormats")}</h2>
+        <p>{t("docsFormatsText")}</p>
+        <table className="data-table compact params">
+          <tbody>
+            {(["geopol", "geojson", "photon", "compact"] as const).map((fmt) => (
+              <tr key={fmt}>
+                <td>
+                  <code>format={fmt}</code>
+                </td>
+                <td>{t(`format_${fmt}_doc`)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <Sample code={`${base}/v1/autocomplete?q=lyon&format=geojson`} />
+        <pre className="code-sample">{`// format=compact
+{ "results": [{ "id": "R120965", "layer": "city", "label": "Lyon, Auvergne-Rhône-Alpes, France", "lat": 45.758, "lon": 4.835 }] }`}</pre>
+      </section>
+
+      <section className="card">
+        <h2 className="section-title">{t("docsCache")}</h2>
+        <p>{t("docsCacheText")}</p>
       </section>
 
       <section className="card">

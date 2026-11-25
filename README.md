@@ -49,13 +49,15 @@ GeoPol replaces a Photon instance with something lighter to run and easier to co
 - **Search**: whole words, with filters (layers, countries, bounding box, OSM tags)
 - **Reverse geocoding**: the nearest address and street, and every area the point is in, from the actual boundaries (district → city → county → state → country)
 - **Photon-compatible endpoints** (`/api`, `/reverse`): apps using Photon only change their URL
+- **Four answer formats** on `/v1/…` (`?format=`): GeoPol's own, GeoJSON, Photon's GeoJSON, or a compact list
 
 The dashboard is built like my other apps ([Calendar](https://github.com/PaulBayfield/calendar.bayfield.dev), [Notes](https://github.com/PaulBayfield/notes.bayfield.dev), [Llip](https://github.com/PaulBayfield/llip.bayfield.dev)): same header, sidebar, side panel, settings and update check. In it:
 
 - **Regions**: click a country on the world map (or pick it in the catalog) to install it; GeoPol downloads and imports it in the background, with live progress, without slowing down the regions already served. Update or remove regions in one click; auto-update them weekly
-- **Playground**: try autocomplete, search and reverse on a map, with timings and the raw JSON
+- **Playground**: try autocomplete, search and reverse on a map, with timings and the raw JSON; hide a wrong result in one click
+- **Custom places**: add places OpenStreetMap doesn't have (or names people use for ones it does), picked on a map; every endpoint finds them like the imported ones, and region updates never touch them. A place can be private: only the API keys you pick find it
 - **API keys**: one per app, with allowed endpoints, requests per minute, daily quota, expiry, allowed websites and IP addresses, and usage stats. A switch decides whether keys are required (everywhere, on some endpoints, or not at all, with per-IP limits)
-- **Settings, live**: access and limits, CORS, default and maximum results, layers, default language, ranking weights, languages kept and house numbers for new imports, update schedule
+- **Settings, live**: access and limits, CORS, default and maximum results, layers, default language, ranking weights, synonyms (`st` ↔ `saint`), a blocklist (by OSM id or name pattern), the response cache (duration, size, hit rate), the default answer format, languages kept and house numbers for new imports, update schedule
 - **Overview**: places served, disk used, requests over 30 days, response times (p50/p95)
 - **API docs**, with examples pointing at your server
 
@@ -87,6 +89,8 @@ flowchart LR
 - **Imports without downtime**: a region goes into tables of its own, gets its indexes, then is attached in one quick step; the old version answers until then. Removing a region is a `DROP TABLE`.
 - **Search**: full-text vectors (names weighted above the address), prefix matching on the last word, two tiers (the ~1% most important places in their own index first, then the long tail capped at a few thousand candidates), a trigram fallback for typos, and ranking by importance, name match and distance (tunable in Settings → Ranking).
 - **Reverse**: nearest address (KNN), nearest street by its line, containing areas by their polygons (GiST).
+- **Custom places** live in a partition of their own (region `custom`, OSM type `X`), so they share the indexes and every query path; imports and removals only ever touch a region's own partitions.
+- **Response cache**: identical requests within the TTL are answered from memory (an LRU, `X-Cache: HIT`/`MISS`), after the access checks; emptied whenever settings, custom places, the blocklist or the regions change.
 
 Benchmarks of the first prototype on Belgium (5.1 M places): [docs/spike.md](docs/spike.md). With parallel parsing, Belgium imports in about 2 minutes (2.6 GB with house numbers); autocomplete answers in 3–70 ms, reverse in 3–7 ms.
 
@@ -95,9 +99,9 @@ Benchmarks of the first prototype on Belgium (5.1 M places): [docs/spike.md](doc
 
 | Endpoint | What |
 |---|---|
-| `GET /v1/autocomplete?q=` | As-you-type results. Also `limit`, `lat`+`lon` (favour nearby), `lang`, `layers`, `countries`, `bbox`, `tags` |
+| `GET /v1/autocomplete?q=` | As-you-type results. Also `limit`, `lat`+`lon` (favour nearby), `lang`, `layers`, `countries`, `bbox`, `tags`, `format` |
 | `GET /v1/search?q=` | Whole-word search, same parameters |
-| `GET /v1/reverse?lat=&lon=` | What's at a point. Also `radius` (m), `limit`, `lang`, `layers` |
+| `GET /v1/reverse?lat=&lon=` | What's at a point. Also `radius` (m), `limit`, `lang`, `layers`, `format` |
 | `GET /api?q=` | Photon-compatible search (GeoJSON) |
 | `GET /reverse?lat=&lon=` | Photon-compatible reverse (GeoJSON, `radius` in km) |
 | `GET /v1/status` | Regions served, whether a key is required (no key needed) |
@@ -170,8 +174,8 @@ Only what the server needs to start; everything else is set in the dashboard. Se
 | Keys | Action |
 |---|---|
 | `Ctrl K` or `/` | Search |
-| `1`–`5` | Overview, Regions, Playground, API keys, Docs |
-| `N` | New API key |
+| `1`–`6` | Overview, Regions, Playground, Custom places, API keys, Docs |
+| `N` | New custom place (on that page), else new API key |
 | `Ctrl B` or `\` | Toggle sidebar |
 | `.` | Toggle side panel (imports) |
 | `Ctrl ,` | Settings |
@@ -188,7 +192,7 @@ Only what the server needs to start; everything else is set in the dashboard. Se
 ```
 geo.bayfield.dev/
 ├── src/                     # the dashboard
-│   ├── components/          # OverviewPage, RegionsPage, PlaygroundPage, KeysPage, DocsPage, MapCanvas, ActivityPanel, the shell, settings
+│   ├── components/          # OverviewPage, RegionsPage, PlaygroundPage, PlacesPage, KeysPage, DocsPage, MapCanvas, ActivityPanel, the shell, settings
 │   ├── lib/                 # api, countries (map shapes ↔ catalog), i18n, settings, router…
 │   ├── styles.css           # the shared shell stylesheet
 │   └── geopol.css           # this app's views
@@ -198,6 +202,8 @@ geo.bayfield.dev/
 │   │   ├── geocode.ts       # search, autocomplete, reverse, output formats
 │   │   ├── access.ts        # API keys, rate limits, quotas, CORS, usage
 │   │   ├── settings.ts      # live settings
+│   │   ├── places.ts        # custom places
+│   │   ├── cache.ts         # the response cache
 │   │   ├── api.ts           # the dashboard's API
 │   │   ├── import/          # catalog, jobs, importer (run.ts, worker.ts), Photon dump format
 │   │   └── …                # index, config, db, auth, http, users, updates

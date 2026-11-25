@@ -6,7 +6,7 @@ import type { Page } from "../lib/router";
 import { useSettings } from "../lib/settings";
 import type { StringKey } from "../lib/i18n";
 import { Flags } from "./common";
-import { BookOpen, Crosshair, Gauge, Globe, Key, PanelLeft, Search } from "./icons";
+import { BookOpen, Crosshair, Gauge, Globe, Key, MapPin, PanelLeft, Search } from "./icons";
 
 const MIN_W = 200;
 const MAX_W = 480;
@@ -16,8 +16,9 @@ export const NAV: { page: Page; label: StringKey; icon: ReactNode; key: string }
   { page: "overview", label: "overview", icon: <Gauge />, key: "1" },
   { page: "regions", label: "regions", icon: <Globe />, key: "2" },
   { page: "playground", label: "playground", icon: <Crosshair />, key: "3" },
-  { page: "keys", label: "apiKeys", icon: <Key />, key: "4" },
-  { page: "docs", label: "docs", icon: <BookOpen />, key: "5" },
+  { page: "places", label: "customPlaces", icon: <MapPin />, key: "4" },
+  { page: "keys", label: "apiKeys", icon: <Key />, key: "5" },
+  { page: "docs", label: "docs", icon: <BookOpen />, key: "6" },
 ];
 
 /** Same layout as Calendar's and Notes' sidebars: toggle and search on top, then the pages and the regions. */
